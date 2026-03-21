@@ -16,6 +16,9 @@ export function view(
         <div>
             <h1>Chess Stats</h1>
             <p>Coming soon.</p>
+            <p>
+                <a href="/create-account">Create account</a> · <a href="/login">Sign in</a>
+            </p>
         </div>
     );
 }
