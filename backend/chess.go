@@ -16,6 +16,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetChessProfile)
 	vbeam.RegisterProc(app, SyncGames)
 	vbeam.RegisterProc(app, GetGameStats)
+	vbeam.RegisterProc(app, GetOpeningStats)
 }
 
 // Request/Response types
@@ -43,6 +44,32 @@ type TimeClassRecord struct {
 type GetGameStatsResponse struct {
 	Overall TimeClassRecord            `json:"overall"`
 	ByClass map[string]TimeClassRecord `json:"byClass"`
+}
+
+type GetOpeningStatsRequest struct {
+	TimeClass string `json:"timeClass,omitempty"`
+}
+
+type ColorRecord struct {
+	Wins   int `json:"wins"`
+	Losses int `json:"losses"`
+	Draws  int `json:"draws"`
+}
+
+type VariationRecord struct {
+	AsWhite ColorRecord `json:"asWhite"`
+	AsBlack ColorRecord `json:"asBlack"`
+}
+
+type OpeningRecord struct {
+	ECO        string                     `json:"eco"`
+	AsWhite    ColorRecord                `json:"asWhite"`
+	AsBlack    ColorRecord                `json:"asBlack"`
+	Variations map[string]VariationRecord `json:"variations"`
+}
+
+type GetOpeningStatsResponse struct {
+	ByOpening map[string]OpeningRecord `json:"byOpening"`
 }
 
 type SyncGamesResponse struct {
@@ -96,6 +123,21 @@ func PackGame(self *Game, buf *vpack.Buffer) {
 	vpack.String(&self.Rules, buf)
 }
 
+// Database types for openings
+
+type OpeningInfo struct {
+	ECO       string
+	Opening   string
+	Variation string
+}
+
+func PackOpeningInfo(self *OpeningInfo, buf *vpack.Buffer) {
+	vpack.Version(1, buf)
+	vpack.String(&self.ECO, buf)
+	vpack.String(&self.Opening, buf)
+	vpack.String(&self.Variation, buf)
+}
+
 // Buckets
 
 // userId => ChessProfile
@@ -106,6 +148,9 @@ var GameBkt = vbolt.Bucket(&cfg.Info, "chess_games", vpack.StringZ, PackGame)
 
 // gameId => PGN string (stored separately to keep GameBkt lean)
 var GamePgnBkt = vbolt.Bucket(&cfg.Info, "chess_game_pgn", vpack.StringZ, vpack.String)
+
+// gameId => OpeningInfo (derived from PGN headers)
+var GameOpeningBkt = vbolt.Bucket(&cfg.Info, "chess_game_opening", vpack.StringZ, PackOpeningInfo)
 
 // Index: term=userId(int), target=gameId(string)
 // Enables listing and counting all game IDs for a given user.
@@ -244,8 +289,28 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 		pgn := pg.pgn
 		vbolt.Write(ctx.Tx, GamePgnBkt, pg.game.Id, &pgn)
 		vbolt.SetTargetSingleTerm(ctx.Tx, GamesByUserIdx, pg.game.Id, user.Id)
+		if info := extractOpeningFromPGN(pg.pgn); info.ECO != "" {
+			vbolt.Write(ctx.Tx, GameOpeningBkt, pg.game.Id, &info)
+		}
 		added++
 	}
+
+	// Backfill opening info for games that don't have it yet (runs once on upgrade, then is fast)
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		if vbolt.HasKey(ctx.Tx, GameOpeningBkt, gameId) {
+			return true
+		}
+		var pgn string
+		vbolt.Read(ctx.Tx, GamePgnBkt, gameId, &pgn)
+		if pgn == "" {
+			return true
+		}
+		info := extractOpeningFromPGN(pgn)
+		if info.ECO != "" {
+			vbolt.Write(ctx.Tx, GameOpeningBkt, gameId, &info)
+		}
+		return true
+	})
 
 	synced := true
 	for _, mk := range monthsToMark {
@@ -289,6 +354,115 @@ func GetGameStats(ctx *vbeam.Context, req Empty) (resp GetGameStatsResponse, err
 		return true
 	})
 	return
+}
+
+func GetOpeningStats(ctx *vbeam.Context, req GetOpeningStatsRequest) (resp GetOpeningStatsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	resp.ByOpening = make(map[string]OpeningRecord)
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var info OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+		if info.Opening == "" {
+			return true
+		}
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if req.TimeClass != "" && game.TimeClass != req.TimeClass {
+			return true
+		}
+		rec := resp.ByOpening[info.Opening]
+		if rec.Variations == nil {
+			rec.Variations = make(map[string]VariationRecord)
+		}
+		if rec.ECO == "" && info.ECO != "" {
+			rec.ECO = info.ECO
+		}
+		bumpColor := func(cr *ColorRecord) {
+			switch game.Result {
+			case "win":
+				cr.Wins++
+			case "loss":
+				cr.Losses++
+			default:
+				cr.Draws++
+			}
+		}
+		if game.UserColor == "white" {
+			bumpColor(&rec.AsWhite)
+		} else {
+			bumpColor(&rec.AsBlack)
+		}
+		if info.Variation != "" {
+			vr := rec.Variations[info.Variation]
+			if game.UserColor == "white" {
+				bumpColor(&vr.AsWhite)
+			} else {
+				bumpColor(&vr.AsBlack)
+			}
+			rec.Variations[info.Variation] = vr
+		}
+		resp.ByOpening[info.Opening] = rec
+		return true
+	})
+	return
+}
+
+// parsePGNHeader extracts the value of a PGN header tag, e.g. parsePGNHeader(pgn, "ECO") -> "B12"
+func parsePGNHeader(pgn, key string) string {
+	prefix := `[` + key + ` "`
+	idx := strings.Index(pgn, prefix)
+	if idx == -1 {
+		return ""
+	}
+	rest := pgn[idx+len(prefix):]
+	end := strings.Index(rest, `"`)
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
+}
+
+// openingKeywords are checked in order; the first match splits opening from variation in an ECOUrl path.
+var openingKeywords = []string{
+	// Longer/more specific first to avoid partial matches
+	"Gambit-Declined", "Gambit-Accepted",
+	"Defense", "Defence", "Game", "Opening", "Attack", "Gambit",
+	"Dutch", "System",
+}
+
+// parseECOUrl splits a chess.com ECOUrl into top-level opening name and variation name.
+// e.g. "https://www.chess.com/openings/Caro-Kann-Defense-Advance-Variation"
+//
+//	-> ("Caro-Kann Defense", "Advance Variation")
+func parseECOUrl(ecoURL string) (opening, variation string) {
+	if ecoURL == "" {
+		return "", ""
+	}
+	parts := strings.Split(strings.TrimRight(ecoURL, "/"), "/")
+	path := parts[len(parts)-1]
+	for _, kw := range openingKeywords {
+		idx := strings.Index(path, kw)
+		if idx == -1 {
+			continue
+		}
+		end := idx + len(kw)
+		opening = strings.ReplaceAll(path[:end], "-", " ")
+		variation = strings.TrimSpace(strings.ReplaceAll(strings.TrimLeft(path[end:], "-"), "-", " "))
+		return
+	}
+	// Fallback: whole path is the opening name
+	opening = strings.ReplaceAll(path, "-", " ")
+	return
+}
+
+func extractOpeningFromPGN(pgn string) OpeningInfo {
+	eco := parsePGNHeader(pgn, "ECO")
+	ecoURL := parsePGNHeader(pgn, "ECOUrl")
+	opening, variation := parseECOUrl(ecoURL)
+	return OpeningInfo{ECO: eco, Opening: opening, Variation: variation}
 }
 
 func buildGame(raw chesscomGame, gameId string, userId int, username string) Game {

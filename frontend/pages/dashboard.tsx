@@ -4,13 +4,14 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 
 type Data = {
   chesscomUsername: string;
   gameCount: number;
   stats: GetGameStatsResponse | null;
+  openingStats: GetOpeningStatsResponse | null;
 };
 
 type ChessState = {
@@ -19,6 +20,7 @@ type ChessState = {
   syncing: boolean;
   statusMessage: string;
   isError: boolean;
+  expandedOpenings: Record<string, boolean>;
 };
 
 const useChessState = vlens.declareHook(
@@ -28,24 +30,31 @@ const useChessState = vlens.declareHook(
     syncing: false,
     statusMessage: "",
     isError: false,
+    expandedOpenings: {},
   })
 );
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
   let stats: GetGameStatsResponse | null = null;
+  let openingStats: GetOpeningStatsResponse | null = null;
   if (username) {
-    const [s] = await server.GetGameStats({});
+    const [[s], [os]] = await Promise.all([
+      server.GetGameStats({}),
+      server.GetOpeningStats({ timeClass: "" }),
+    ]);
     stats = s ?? null;
+    openingStats = os ?? null;
   }
   return rpc.ok<Data>({
     chesscomUsername: username,
     gameCount: profile?.gameCount ?? 0,
     stats,
+    openingStats,
   });
 }
 
@@ -104,8 +113,12 @@ async function onSyncGames(state: ChessState, data: Data, event: Event) {
     data.gameCount = resp.totalGames;
     state.statusMessage = `Sync complete. ${resp.newGamesAdded} new games added. Total: ${resp.totalGames}.`;
     state.isError = false;
-    const [s] = await server.GetGameStats({});
+    const [[s], [os]] = await Promise.all([
+      server.GetGameStats({}),
+      server.GetOpeningStats({ timeClass: "" }),
+    ]);
     data.stats = s ?? null;
+    data.openingStats = os ?? null;
   } else {
     state.statusMessage = resp?.error || "Sync failed";
     state.isError = true;
@@ -137,6 +150,106 @@ function RecordRow({ label, r }: { label: string; r: { wins: number; losses: num
       <td>{r.draws}</td>
       <td>{winPct(r)}</td>
     </tr>
+  );
+}
+
+function totalColor(r: ColorRecord): number {
+  return r.wins + r.losses + r.draws;
+}
+
+function totalOpening(rec: OpeningRecord): number {
+  return totalColor(rec.asWhite) + totalColor(rec.asBlack);
+}
+
+function toggleOpening(state: ChessState, name: string, event: Event) {
+  event.preventDefault();
+  state.expandedOpenings = {
+    ...state.expandedOpenings,
+    [name]: !state.expandedOpenings[name],
+  };
+  vlens.scheduleRedraw();
+}
+
+function ColorCells({ r }: { r: ColorRecord }) {
+  const total = totalColor(r);
+  if (total === 0) return <><td>—</td><td>—</td><td>—</td><td>—</td></>;
+  return (
+    <>
+      <td>{r.wins}</td>
+      <td>{r.losses}</td>
+      <td>{r.draws}</td>
+      <td>{winPct(r)}</td>
+    </>
+  );
+}
+
+function OpeningsSection({
+  openingStats,
+  state,
+}: {
+  openingStats: GetOpeningStatsResponse | null;
+  state: ChessState;
+}) {
+  if (!openingStats) return null;
+  const entries = Object.entries(openingStats.byOpening).sort(
+    (a, b) => totalOpening(b[1]) - totalOpening(a[1])
+  );
+  if (entries.length === 0) return null;
+  return (
+    <div class="stats-section">
+      <h3>Openings</h3>
+      <table class="stats-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th colspan={4}>As White</th>
+            <th colspan={4}>As Black</th>
+          </tr>
+          <tr>
+            <th></th>
+            <th>W</th><th>L</th><th>D</th><th>Win%</th>
+            <th>W</th><th>L</th><th>D</th><th>Win%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(([name, rec]) => {
+            const expanded = !!state.expandedOpenings[name];
+            const variations = Object.entries(rec.variations ?? {}).sort(
+              (a, b) => (totalColor(b[1].asWhite) + totalColor(b[1].asBlack)) - (totalColor(a[1].asWhite) + totalColor(a[1].asBlack))
+            );
+            return (
+              <>
+                <tr key={name}>
+                  <td>
+                    {variations.length > 0 ? (
+                      <a
+                        href="#"
+                        class="opening-toggle"
+                        onClick={vlens.cachePartial(toggleOpening, state, name)}
+                      >
+                        {expanded ? "▾" : "▸"} {name}
+                      </a>
+                    ) : (
+                      name
+                    )}
+                  </td>
+                  <ColorCells r={rec.asWhite} />
+                  <ColorCells r={rec.asBlack} />
+                </tr>
+                {expanded &&
+                  variations.map(([varName, vr]) => (
+                    <tr key={`${name}/${varName}`} class="variation-row">
+                      <td style="padding-left: 1.5em">{varName}</td>
+                      <ColorCells r={vr.asWhite} />
+                      <ColorCells r={vr.asBlack} />
+                    </tr>
+                  ))}
+              </>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -237,6 +350,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
           </p>
         )}
         <StatsSection stats={data.stats} />
+        <OpeningsSection openingStats={data.openingStats} state={state} />
       </div>
     </div>
   </div>

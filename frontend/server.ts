@@ -50,10 +50,36 @@ export interface GetGameStatsResponse {
     byClass: Record<string, TimeClassRecord>
 }
 
+export interface GetOpeningStatsRequest {
+    timeClass: string
+}
+
+export interface GetOpeningStatsResponse {
+    byOpening: Record<string, OpeningRecord>
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
     draws: number
+}
+
+export interface OpeningRecord {
+    eco: string
+    asWhite: ColorRecord
+    asBlack: ColorRecord
+    variations: Record<string, VariationRecord>
+}
+
+export interface ColorRecord {
+    wins: number
+    losses: number
+    draws: number
+}
+
+export interface VariationRecord {
+    asWhite: ColorRecord
+    asBlack: ColorRecord
 }
 
 export async function CreateAccount(data: CreateAccountRequest): Promise<rpc.Response<CreateAccountResponse>> {
@@ -78,5 +104,9 @@ export async function SyncGames(data: Empty): Promise<rpc.Response<SyncGamesResp
 
 export async function GetGameStats(data: Empty): Promise<rpc.Response<GetGameStatsResponse>> {
     return await rpc.call<GetGameStatsResponse>('GetGameStats', JSON.stringify(data));
+}
+
+export async function GetOpeningStats(data: GetOpeningStatsRequest): Promise<rpc.Response<GetOpeningStatsResponse>> {
+    return await rpc.call<GetOpeningStatsResponse>('GetOpeningStats', JSON.stringify(data));
 }
 
