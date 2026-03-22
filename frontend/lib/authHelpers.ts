@@ -1,4 +1,5 @@
 import * as core from "vlens/core";
+import * as rpc from "vlens/rpc";
 import * as auth from "./authCache";
 import * as server from "../server";
 
@@ -16,6 +17,9 @@ async function tryRefreshAuth(): Promise<auth.AuthCache | null> {
     if (response.ok) {
       const data = await response.json();
       if (data.success && data.auth) {
+        if (data.token) {
+          rpc.setAuthHeaders({ "x-auth-token": data.token });
+        }
         return data.auth;
       }
     }
@@ -32,6 +36,17 @@ async function tryRefreshAuth(): Promise<auth.AuthCache | null> {
 export async function ensureAuthInFetch(): Promise<boolean> {
   const currentAuth = auth.getAuth();
   if (currentAuth && currentAuth.id > 0) {
+    // Headers may be lost on page reload — restore them via refresh if needed
+    if (!rpc.getAuthHeaders()["x-auth-token"]) {
+      const refreshedAuth = await tryRefreshAuth();
+      if (refreshedAuth) {
+        auth.setAuth(refreshedAuth);
+        return true;
+      }
+      auth.clearAuth();
+      core.setRoute("/login");
+      return false;
+    }
     return true;
   }
 

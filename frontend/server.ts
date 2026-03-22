@@ -24,14 +24,6 @@ export interface AuthResponse {
     isAdmin: boolean
 }
 
-export async function CreateAccount(data: CreateAccountRequest): Promise<rpc.Response<CreateAccountResponse>> {
-    return await rpc.call<CreateAccountResponse>('CreateAccount', JSON.stringify(data));
-}
-
-export async function GetAuthContext(data: Empty): Promise<rpc.Response<AuthResponse>> {
-    return await rpc.call<AuthResponse>('GetAuthContext', JSON.stringify(data));
-}
-
 export interface SetChessUsernameRequest {
     chesscomUsername: string
 }
@@ -53,6 +45,25 @@ export interface SyncGamesResponse {
     totalGames: number
 }
 
+export interface GetGameStatsResponse {
+    overall: TimeClassRecord
+    byClass: Record<string, TimeClassRecord>
+}
+
+export interface TimeClassRecord {
+    wins: number
+    losses: number
+    draws: number
+}
+
+export async function CreateAccount(data: CreateAccountRequest): Promise<rpc.Response<CreateAccountResponse>> {
+    return await rpc.call<CreateAccountResponse>('CreateAccount', JSON.stringify(data));
+}
+
+export async function GetAuthContext(data: Empty): Promise<rpc.Response<AuthResponse>> {
+    return await rpc.call<AuthResponse>('GetAuthContext', JSON.stringify(data));
+}
+
 export async function SetChessUsername(data: SetChessUsernameRequest): Promise<rpc.Response<SetChessUsernameResponse>> {
     return await rpc.call<SetChessUsernameResponse>('SetChessUsername', JSON.stringify(data));
 }
@@ -64,3 +75,8 @@ export async function GetChessProfile(data: Empty): Promise<rpc.Response<GetChes
 export async function SyncGames(data: Empty): Promise<rpc.Response<SyncGamesResponse>> {
     return await rpc.call<SyncGamesResponse>('SyncGames', JSON.stringify(data));
 }
+
+export async function GetGameStats(data: Empty): Promise<rpc.Response<GetGameStatsResponse>> {
+    return await rpc.call<GetGameStatsResponse>('GetGameStats', JSON.stringify(data));
+}
+

@@ -26,8 +26,10 @@ type Claims struct {
 }
 
 var appDb *vbolt.DB
+var isProduction bool
 
 func SetupAuth(app *vbeam.Application) {
+	isProduction = os.Getenv("ENVIRONMENT") == "production" || os.Getenv("PROD") == "true"
 	jwtSecret := os.Getenv("JWT_SECRET_KEY")
 	if jwtSecret == "" {
 		if os.Getenv("ENVIRONMENT") == "production" || os.Getenv("PROD") == "true" {
@@ -148,7 +150,7 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isProduction,
 		SameSite: http.SameSiteStrictMode,
 		Expires:  time.Unix(0, 0),
 	})
@@ -158,7 +160,7 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isProduction,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Unix(0, 0),
 	})
@@ -203,7 +205,7 @@ func setAuthJwtCookie(user User, w http.ResponseWriter) (tokenString string, err
 		Value:    tokenString,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isProduction,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   60 * 60 * 24, // 24 hours
 	})
@@ -237,7 +239,7 @@ func generateAuthJwt(user User, w http.ResponseWriter) (tokenString string, err 
 		Value:    refreshToken.Token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isProduction,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   60 * 60 * 24 * 30, // 30 days
 	})

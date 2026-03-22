@@ -4,11 +4,13 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
+import { GetGameStatsResponse } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 
 type Data = {
   chesscomUsername: string;
   gameCount: number;
+  stats: GetGameStatsResponse | null;
 };
 
 type ChessState = {
@@ -31,12 +33,19 @@ const useChessState = vlens.declareHook(
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0 });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null });
   }
   const [profile] = await server.GetChessProfile({});
+  const username = profile?.chesscomUsername ?? "";
+  let stats: GetGameStatsResponse | null = null;
+  if (username) {
+    const [s] = await server.GetGameStats({});
+    stats = s ?? null;
+  }
   return rpc.ok<Data>({
-    chesscomUsername: profile?.chesscomUsername ?? "",
+    chesscomUsername: username,
     gameCount: profile?.gameCount ?? 0,
+    stats,
   });
 }
 
@@ -54,9 +63,7 @@ export function view(
 }
 
 async function onLogoutClicked() {
-  auth.clearAuth();
-  core.setRoute("/login");
-  vlens.scheduleRedraw();
+  await auth.logout();
 }
 
 async function onSaveUsername(state: ChessState, data: Data, event: Event) {
@@ -97,6 +104,8 @@ async function onSyncGames(state: ChessState, data: Data, event: Event) {
     data.gameCount = resp.totalGames;
     state.statusMessage = `Sync complete. ${resp.newGamesAdded} new games added. Total: ${resp.totalGames}.`;
     state.isError = false;
+    const [s] = await server.GetGameStats({});
+    data.stats = s ?? null;
   } else {
     state.statusMessage = resp?.error || "Sync failed";
     state.isError = true;
@@ -109,6 +118,53 @@ function onChangeUsername(state: ChessState, event: Event) {
   state.usernameInput = "";
   state.statusMessage = "";
   vlens.scheduleRedraw();
+}
+
+const TIME_CLASS_ORDER = ["bullet", "blitz", "rapid", "daily"];
+
+function winPct(r: { wins: number; losses: number; draws: number }): string {
+  const total = r.wins + r.losses + r.draws;
+  if (total === 0) return "0%";
+  return Math.round((r.wins / total) * 100) + "%";
+}
+
+function RecordRow({ label, r }: { label: string; r: { wins: number; losses: number; draws: number } }) {
+  return (
+    <tr>
+      <td>{label}</td>
+      <td>{r.wins}</td>
+      <td>{r.losses}</td>
+      <td>{r.draws}</td>
+      <td>{winPct(r)}</td>
+    </tr>
+  );
+}
+
+function StatsSection({ stats }: { stats: GetGameStatsResponse | null }) {
+  if (!stats) return null;
+  const classes = TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]);
+  return (
+    <div class="stats-section">
+      <h3>Record</h3>
+      <table class="stats-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>W</th>
+            <th>L</th>
+            <th>D</th>
+            <th>Win%</th>
+          </tr>
+        </thead>
+        <tbody>
+          <RecordRow label="Overall" r={stats.overall} />
+          {classes.map((tc) => (
+            <RecordRow key={tc} label={tc.charAt(0).toUpperCase() + tc.slice(1)} r={stats.byClass[tc]} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 interface DashboardPageProps {
@@ -180,6 +236,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
             {state.statusMessage}
           </p>
         )}
+        <StatsSection stats={data.stats} />
       </div>
     </div>
   </div>

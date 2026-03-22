@@ -15,6 +15,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, SetChessUsername)
 	vbeam.RegisterProc(app, GetChessProfile)
 	vbeam.RegisterProc(app, SyncGames)
+	vbeam.RegisterProc(app, GetGameStats)
 }
 
 // Request/Response types
@@ -31,6 +32,17 @@ type SetChessUsernameResponse struct {
 type GetChessProfileResponse struct {
 	ChesscomUsername string `json:"chesscomUsername"`
 	GameCount        int    `json:"gameCount"`
+}
+
+type TimeClassRecord struct {
+	Wins   int `json:"wins"`
+	Losses int `json:"losses"`
+	Draws  int `json:"draws"`
+}
+
+type GetGameStatsResponse struct {
+	Overall TimeClassRecord            `json:"overall"`
+	ByClass map[string]TimeClassRecord `json:"byClass"`
 }
 
 type SyncGamesResponse struct {
@@ -248,6 +260,34 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 	resp.Success = true
 	resp.NewGamesAdded = added
 	resp.TotalGames = total
+	return
+}
+
+func GetGameStats(ctx *vbeam.Context, req Empty) (resp GetGameStatsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	resp.ByClass = make(map[string]TimeClassRecord)
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		update := func(r *TimeClassRecord) {
+			switch game.Result {
+			case "win":
+				r.Wins++
+			case "loss":
+				r.Losses++
+			default:
+				r.Draws++
+			}
+		}
+		update(&resp.Overall)
+		tc := resp.ByClass[game.TimeClass]
+		update(&tc)
+		resp.ByClass[game.TimeClass] = tc
+		return true
+	})
 	return
 }
 
