@@ -45,13 +45,16 @@ export interface SyncGamesResponse {
     totalGames: number
 }
 
+export interface GameFilter {
+    timeClass: string
+    minOpponentRating: number
+    maxOpponentRating: number
+    since: number
+}
+
 export interface GetGameStatsResponse {
     overall: TimeClassRecord
     byClass: Record<string, TimeClassRecord>
-}
-
-export interface GetOpeningStatsRequest {
-    timeClass: string
 }
 
 export interface GetOpeningStatsResponse {
@@ -102,11 +105,11 @@ export async function SyncGames(data: Empty): Promise<rpc.Response<SyncGamesResp
     return await rpc.call<SyncGamesResponse>('SyncGames', JSON.stringify(data));
 }
 
-export async function GetGameStats(data: Empty): Promise<rpc.Response<GetGameStatsResponse>> {
+export async function GetGameStats(data: GameFilter): Promise<rpc.Response<GetGameStatsResponse>> {
     return await rpc.call<GetGameStatsResponse>('GetGameStats', JSON.stringify(data));
 }
 
-export async function GetOpeningStats(data: GetOpeningStatsRequest): Promise<rpc.Response<GetOpeningStatsResponse>> {
+export async function GetOpeningStats(data: GameFilter): Promise<rpc.Response<GetOpeningStatsResponse>> {
     return await rpc.call<GetOpeningStatsResponse>('GetOpeningStats', JSON.stringify(data));
 }
 

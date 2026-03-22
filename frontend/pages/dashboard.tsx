@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, GameFilter } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 
 type Data = {
@@ -21,6 +21,10 @@ type ChessState = {
   statusMessage: string;
   isError: boolean;
   expandedOpenings: Record<string, boolean>;
+  filterTimeClass: string;
+  filterTimePeriod: string;
+  filterMinRating: string;
+  filterMaxRating: string;
 };
 
 const useChessState = vlens.declareHook(
@@ -31,8 +35,41 @@ const useChessState = vlens.declareHook(
     statusMessage: "",
     isError: false,
     expandedOpenings: {},
+    filterTimeClass: "",
+    filterTimePeriod: "all",
+    filterMinRating: "",
+    filterMaxRating: "",
   })
 );
+
+function periodToSince(period: string): number {
+  const now = Date.now() / 1000;
+  switch (period) {
+    case "7d":  return Math.floor(now - 7 * 86400);
+    case "30d": return Math.floor(now - 30 * 86400);
+    case "90d": return Math.floor(now - 90 * 86400);
+    case "1y":  return Math.floor(now - 365 * 86400);
+    default:    return 0;
+  }
+}
+
+function buildFilter(state: ChessState): GameFilter {
+  return {
+    timeClass: state.filterTimeClass,
+    minOpponentRating: parseInt(state.filterMinRating) || 0,
+    maxOpponentRating: parseInt(state.filterMaxRating) || 0,
+    since: periodToSince(state.filterTimePeriod),
+  };
+}
+
+async function fetchStats(filter: GameFilter, data: Data) {
+  const [[s], [os]] = await Promise.all([
+    server.GetGameStats(filter),
+    server.GetOpeningStats(filter),
+  ]);
+  data.stats = s ?? null;
+  data.openingStats = os ?? null;
+}
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
@@ -43,9 +80,10 @@ export async function fetch(route: string, prefix: string) {
   let stats: GetGameStatsResponse | null = null;
   let openingStats: GetOpeningStatsResponse | null = null;
   if (username) {
+    const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
     const [[s], [os]] = await Promise.all([
-      server.GetGameStats({}),
-      server.GetOpeningStats({ timeClass: "" }),
+      server.GetGameStats(defaultFilter),
+      server.GetOpeningStats(defaultFilter),
     ]);
     stats = s ?? null;
     openingStats = os ?? null;
@@ -113,12 +151,7 @@ async function onSyncGames(state: ChessState, data: Data, event: Event) {
     data.gameCount = resp.totalGames;
     state.statusMessage = `Sync complete. ${resp.newGamesAdded} new games added. Total: ${resp.totalGames}.`;
     state.isError = false;
-    const [[s], [os]] = await Promise.all([
-      server.GetGameStats({}),
-      server.GetOpeningStats({ timeClass: "" }),
-    ]);
-    data.stats = s ?? null;
-    data.openingStats = os ?? null;
+    await fetchStats(buildFilter(state), data);
   } else {
     state.statusMessage = resp?.error || "Sync failed";
     state.isError = true;
@@ -130,6 +163,26 @@ function onChangeUsername(state: ChessState, event: Event) {
   event.preventDefault();
   state.usernameInput = "";
   state.statusMessage = "";
+  vlens.scheduleRedraw();
+}
+
+async function onFilterTimeClass(state: ChessState, data: Data, tc: string, event: Event) {
+  event.preventDefault();
+  state.filterTimeClass = tc;
+  vlens.scheduleRedraw();
+  await fetchStats(buildFilter(state), data);
+  vlens.scheduleRedraw();
+}
+
+async function onFilterTimePeriod(state: ChessState, data: Data, event: Event) {
+  state.filterTimePeriod = (event.target as HTMLSelectElement).value;
+  await fetchStats(buildFilter(state), data);
+  vlens.scheduleRedraw();
+}
+
+async function onApplyRatingFilter(state: ChessState, data: Data, event: Event) {
+  event.preventDefault();
+  await fetchStats(buildFilter(state), data);
   vlens.scheduleRedraw();
 }
 
@@ -195,6 +248,24 @@ function OpeningsSection({
     (a, b) => totalOpening(b[1]) - totalOpening(a[1])
   );
   if (entries.length === 0) return null;
+
+  const grandTotal = entries.reduce((sum, [, rec]) => sum + totalOpening(rec), 0);
+  const threshold = grandTotal * 0.05;
+  const mainEntries = entries.filter(([, rec]) => totalOpening(rec) >= threshold);
+  const otherEntries = entries.filter(([, rec]) => totalOpening(rec) < threshold);
+
+  const otherWhite: ColorRecord = { wins: 0, losses: 0, draws: 0 };
+  const otherBlack: ColorRecord = { wins: 0, losses: 0, draws: 0 };
+  for (const [, rec] of otherEntries) {
+    otherWhite.wins += rec.asWhite.wins;
+    otherWhite.losses += rec.asWhite.losses;
+    otherWhite.draws += rec.asWhite.draws;
+    otherBlack.wins += rec.asBlack.wins;
+    otherBlack.losses += rec.asBlack.losses;
+    otherBlack.draws += rec.asBlack.draws;
+  }
+  const otherExpanded = !!state.expandedOpenings["__other__"];
+
   return (
     <div class="stats-section">
       <h3>Openings</h3>
@@ -212,7 +283,7 @@ function OpeningsSection({
           </tr>
         </thead>
         <tbody>
-          {entries.map(([name, rec]) => {
+          {mainEntries.map(([name, rec]) => {
             const expanded = !!state.expandedOpenings[name];
             const variations = Object.entries(rec.variations ?? {}).sort(
               (a, b) => (totalColor(b[1].asWhite) + totalColor(b[1].asBlack)) - (totalColor(a[1].asWhite) + totalColor(a[1].asBlack))
@@ -247,6 +318,31 @@ function OpeningsSection({
               </>
             );
           })}
+          {otherEntries.length > 0 && (
+            <>
+              <tr key="__other__">
+                <td>
+                  <a
+                    href="#"
+                    class="opening-toggle"
+                    onClick={vlens.cachePartial(toggleOpening, state, "__other__")}
+                  >
+                    {otherExpanded ? "▾" : "▸"} Other ({otherEntries.length} openings)
+                  </a>
+                </td>
+                <ColorCells r={otherWhite} />
+                <ColorCells r={otherBlack} />
+              </tr>
+              {otherExpanded &&
+                otherEntries.map(([name, rec]) => (
+                  <tr key={`__other__/${name}`} class="variation-row">
+                    <td style="padding-left: 1.5em">{name}</td>
+                    <ColorCells r={rec.asWhite} />
+                    <ColorCells r={rec.asBlack} />
+                  </tr>
+                ))}
+            </>
+          )}
         </tbody>
       </table>
     </div>
@@ -276,6 +372,55 @@ function StatsSection({ stats }: { stats: GetGameStatsResponse | null }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FilterBar({ state, data }: { state: ChessState; data: Data }) {
+  const timeClasses = ["", ...TIME_CLASS_ORDER];
+  const timeClassLabels: Record<string, string> = { "": "All", bullet: "Bullet", blitz: "Blitz", rapid: "Rapid", daily: "Daily" };
+  return (
+    <div class="filter-bar">
+      <div class="filter-row">
+        {timeClasses.map((tc) => (
+          <button
+            key={tc}
+            class={"filter-pill" + (state.filterTimeClass === tc ? " active" : "")}
+            onClick={vlens.cachePartial(onFilterTimeClass, state, data, tc)}
+          >
+            {timeClassLabels[tc]}
+          </button>
+        ))}
+      </div>
+      <div class="filter-row">
+        <select
+          value={state.filterTimePeriod}
+          onChange={vlens.cachePartial(onFilterTimePeriod, state, data)}
+        >
+          <option value="all">All time</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+          <option value="1y">Last year</option>
+        </select>
+      </div>
+      <form class="filter-row" onSubmit={vlens.cachePartial(onApplyRatingFilter, state, data)}>
+        <label>Opponent rating:</label>
+        <input
+          type="number"
+          placeholder="Min"
+          style="width:5em"
+          {...vlens.attrsBindInput(vlens.ref(state, "filterMinRating"))}
+        />
+        <span>–</span>
+        <input
+          type="number"
+          placeholder="Max"
+          style="width:5em"
+          {...vlens.attrsBindInput(vlens.ref(state, "filterMaxRating"))}
+        />
+        <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+      </form>
     </div>
   );
 }
@@ -349,6 +494,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
             {state.statusMessage}
           </p>
         )}
+        {data.chesscomUsername && <FilterBar state={state} data={data} />}
         <StatsSection stats={data.stats} />
         <OpeningsSection openingStats={data.openingStats} state={state} />
       </div>

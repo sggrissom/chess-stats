@@ -46,8 +46,31 @@ type GetGameStatsResponse struct {
 	ByClass map[string]TimeClassRecord `json:"byClass"`
 }
 
-type GetOpeningStatsRequest struct {
-	TimeClass string `json:"timeClass,omitempty"`
+type GameFilter struct {
+	TimeClass         string `json:"timeClass,omitempty"`
+	MinOpponentRating int    `json:"minOpponentRating,omitempty"`
+	MaxOpponentRating int    `json:"maxOpponentRating,omitempty"`
+	Since             int64  `json:"since,omitempty"` // unix timestamp; 0 = no filter
+}
+
+func gameMatchesFilter(game *Game, f GameFilter) bool {
+	if f.TimeClass != "" && game.TimeClass != f.TimeClass {
+		return false
+	}
+	if f.Since != 0 && game.StartTime < f.Since {
+		return false
+	}
+	opponentRating := game.BlackRating
+	if game.UserColor == "black" {
+		opponentRating = game.WhiteRating
+	}
+	if f.MinOpponentRating != 0 && opponentRating < f.MinOpponentRating {
+		return false
+	}
+	if f.MaxOpponentRating != 0 && opponentRating > f.MaxOpponentRating {
+		return false
+	}
+	return true
 }
 
 type ColorRecord struct {
@@ -283,6 +306,15 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 	var added int
 	for _, pg := range pending {
 		if vbolt.HasKey(ctx.Tx, GameBkt, pg.game.Id) {
+			// Backfill StartTime for games stored before the EndTime fallback was added
+			if pg.game.StartTime != 0 {
+				var existing Game
+				vbolt.Read(ctx.Tx, GameBkt, pg.game.Id, &existing)
+				if existing.StartTime == 0 {
+					existing.StartTime = pg.game.StartTime
+					vbolt.Write(ctx.Tx, GameBkt, pg.game.Id, &existing)
+				}
+			}
 			continue
 		}
 		vbolt.Write(ctx.Tx, GameBkt, pg.game.Id, &pg.game)
@@ -328,7 +360,7 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 	return
 }
 
-func GetGameStats(ctx *vbeam.Context, req Empty) (resp GetGameStatsResponse, err error) {
+func GetGameStats(ctx *vbeam.Context, req GameFilter) (resp GetGameStatsResponse, err error) {
 	user, authErr := GetAuthUser(ctx)
 	if authErr != nil || user.Id == 0 {
 		return
@@ -337,6 +369,9 @@ func GetGameStats(ctx *vbeam.Context, req Empty) (resp GetGameStatsResponse, err
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
 		var game Game
 		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req) {
+			return true
+		}
 		update := func(r *TimeClassRecord) {
 			switch game.Result {
 			case "win":
@@ -356,7 +391,7 @@ func GetGameStats(ctx *vbeam.Context, req Empty) (resp GetGameStatsResponse, err
 	return
 }
 
-func GetOpeningStats(ctx *vbeam.Context, req GetOpeningStatsRequest) (resp GetOpeningStatsResponse, err error) {
+func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsResponse, err error) {
 	user, authErr := GetAuthUser(ctx)
 	if authErr != nil || user.Id == 0 {
 		return
@@ -368,9 +403,15 @@ func GetOpeningStats(ctx *vbeam.Context, req GetOpeningStatsRequest) (resp GetOp
 		if info.Opening == "" {
 			return true
 		}
+		if alias, ok := openingAliases[info.Opening]; ok {
+			info.Opening = alias[0]
+			if info.Variation == "" {
+				info.Variation = alias[1]
+			}
+		}
 		var game Game
 		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
-		if req.TimeClass != "" && game.TimeClass != req.TimeClass {
+		if !gameMatchesFilter(&game, req) {
 			return true
 		}
 		rec := resp.ByOpening[info.Opening]
@@ -429,8 +470,18 @@ func parsePGNHeader(pgn, key string) string {
 var openingKeywords = []string{
 	// Longer/more specific first to avoid partial matches
 	"Gambit-Declined", "Gambit-Accepted",
-	"Defense", "Defence", "Game", "Opening", "Attack", "Gambit",
+	"Game", "Defense", "Defence", "Opening", "Attack", "Gambit",
 	"Dutch", "System",
+}
+
+// openingAliases maps stored opening names to a canonical parent opening + variation name.
+// Needed for Chess.com ECO URLs that place a modifier before the base opening name
+// (e.g. "Alapin-Sicilian-Defense" instead of "Sicilian-Defense-Alapin-Variation").
+var openingAliases = map[string][2]string{
+	"Alapin Sicilian Defense":        {"Sicilian Defense", "Alapin"},
+	"Closed Sicilian Defense":        {"Sicilian Defense", "Closed"},
+	"Vienna Game Max Lange Defense":  {"Vienna Game", "Max Lange Defense"},
+	"Vienna Game Anderssen Defense":  {"Vienna Game", "Anderssen Defense"},
 }
 
 // parseECOUrl splits a chess.com ECOUrl into top-level opening name and variation name.
@@ -466,6 +517,10 @@ func extractOpeningFromPGN(pgn string) OpeningInfo {
 }
 
 func buildGame(raw chesscomGame, gameId string, userId int, username string) Game {
+	startTime := raw.StartTime
+	if startTime == 0 {
+		startTime = raw.EndTime
+	}
 	g := Game{
 		Id:            gameId,
 		UserId:        userId,
@@ -475,7 +530,7 @@ func buildGame(raw chesscomGame, gameId string, userId int, username string) Gam
 		BlackRating:   raw.Black.Rating,
 		TimeClass:     raw.TimeClass,
 		TimeControl:   raw.TimeControl,
-		StartTime:     raw.StartTime,
+		StartTime:     startTime,
 		Rules:         raw.Rules,
 	}
 	if strings.EqualFold(raw.White.Username, username) {

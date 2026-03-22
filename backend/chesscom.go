@@ -88,14 +88,17 @@ func fetchMonthlyGames(archiveURL string) ([]chesscomGame, error) {
 	return result.Games, nil
 }
 
-// extractGameID returns the numeric ID from the end of a chess.com game URL.
-// e.g. "https://www.chess.com/game/live/12345678" -> "12345678"
+// extractGameID returns a unique ID from a chess.com game URL, including the
+// game type to avoid collisions between live and daily game numeric IDs.
+// e.g. "https://www.chess.com/game/live/12345678"  -> "live/12345678"
+//
+//	"https://www.chess.com/game/daily/12345678" -> "daily/12345678"
 func extractGameID(gameURL string) string {
 	parts := strings.Split(strings.TrimRight(gameURL, "/"), "/")
-	if len(parts) == 0 {
+	if len(parts) < 2 {
 		return ""
 	}
-	return parts[len(parts)-1]
+	return parts[len(parts)-2] + "/" + parts[len(parts)-1]
 }
 
 // extractMonthKey returns the "YYYY/MM" portion from a chess.com archive URL.
