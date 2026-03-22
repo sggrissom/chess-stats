@@ -32,3 +32,35 @@ export async function GetAuthContext(data: Empty): Promise<rpc.Response<AuthResp
     return await rpc.call<AuthResponse>('GetAuthContext', JSON.stringify(data));
 }
 
+export interface SetChessUsernameRequest {
+    chesscomUsername: string
+}
+
+export interface SetChessUsernameResponse {
+    success: boolean
+    error: string
+}
+
+export interface GetChessProfileResponse {
+    chesscomUsername: string
+    gameCount: number
+}
+
+export interface SyncGamesResponse {
+    success: boolean
+    error: string
+    newGamesAdded: number
+    totalGames: number
+}
+
+export async function SetChessUsername(data: SetChessUsernameRequest): Promise<rpc.Response<SetChessUsernameResponse>> {
+    return await rpc.call<SetChessUsernameResponse>('SetChessUsername', JSON.stringify(data));
+}
+
+export async function GetChessProfile(data: Empty): Promise<rpc.Response<GetChessProfileResponse>> {
+    return await rpc.call<GetChessProfileResponse>('GetChessProfile', JSON.stringify(data));
+}
+
+export async function SyncGames(data: Empty): Promise<rpc.Response<SyncGamesResponse>> {
+    return await rpc.call<SyncGamesResponse>('SyncGames', JSON.stringify(data));
+}
