@@ -1,3 +1,4 @@
+import "@app/styles/global";
 import * as vlens from "vlens";
 
 async function main() {
