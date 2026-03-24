@@ -2,6 +2,7 @@
 
 package cfg
 
-const IsRelease = false
-const DBPath    = ".serve/db.bolt"
-const StaticDir = ".serve/static/"
+const IsRelease    = false
+const DBPath       = ".serve/db.bolt"
+const StaticDir    = ".serve/static/"
+const StockfishPath = "stockfish"
