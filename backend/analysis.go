@@ -9,6 +9,7 @@ import (
 
 // Analysis status constants
 const (
+	AnalysisStatusNone      = -1 // no analysis record exists; never requested
 	AnalysisStatusPending   = 0
 	AnalysisStatusAnalyzing = 1
 	AnalysisStatusDone      = 2

@@ -61,6 +61,43 @@ export interface GetOpeningStatsResponse {
     byOpening: Record<string, OpeningRecord>
 }
 
+export interface GetRecentGamesRequest {
+    filter: GameFilter
+    limit: number
+    offset: number
+}
+
+export interface GetRecentGamesResponse {
+    games: RecentGameItem[]
+    total: number
+}
+
+export interface GetGameDetailRequest {
+    gameId: string
+}
+
+export interface GetGameDetailResponse {
+    game: RecentGameItem
+    pgn: string
+    analysisStatus: number
+    analysisDepth: number
+    whiteAccuracy: number
+    blackAccuracy: number
+    moves: MoveAnalysisItem[]
+    errorMessage: string
+    analyzedAt: number
+}
+
+export interface RequestGameAnalysisRequest {
+    gameId: string
+}
+
+export interface RequestGameAnalysisResponse {
+    queued: boolean
+    status: number
+    error: string
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -72,6 +109,32 @@ export interface OpeningRecord {
     asWhite: ColorRecord
     asBlack: ColorRecord
     variations: Record<string, VariationRecord>
+}
+
+export interface RecentGameItem {
+    id: string
+    whiteUsername: string
+    whiteRating: number
+    blackUsername: string
+    blackRating: number
+    timeClass: string
+    timeControl: string
+    result: string
+    userColor: string
+    startTime: number
+    opening: string
+    openingEco: string
+    analysisStatus: number
+}
+
+export interface MoveAnalysisItem {
+    moveNumber: number
+    color: string
+    movePlayed: string
+    bestMove: string
+    evaluation: number
+    isMate: boolean
+    mateIn: number
 }
 
 export interface ColorRecord {
@@ -111,5 +174,17 @@ export async function GetGameStats(data: GameFilter): Promise<rpc.Response<GetGa
 
 export async function GetOpeningStats(data: GameFilter): Promise<rpc.Response<GetOpeningStatsResponse>> {
     return await rpc.call<GetOpeningStatsResponse>('GetOpeningStats', JSON.stringify(data));
+}
+
+export async function GetRecentGames(data: GetRecentGamesRequest): Promise<rpc.Response<GetRecentGamesResponse>> {
+    return await rpc.call<GetRecentGamesResponse>('GetRecentGames', JSON.stringify(data));
+}
+
+export async function GetGameDetail(data: GetGameDetailRequest): Promise<rpc.Response<GetGameDetailResponse>> {
+    return await rpc.call<GetGameDetailResponse>('GetGameDetail', JSON.stringify(data));
+}
+
+export async function RequestGameAnalysis(data: RequestGameAnalysisRequest): Promise<rpc.Response<RequestGameAnalysisResponse>> {
+    return await rpc.call<RequestGameAnalysisResponse>('RequestGameAnalysis', JSON.stringify(data));
 }
 

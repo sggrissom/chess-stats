@@ -4,14 +4,17 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, GameFilter } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, GameFilter, RecentGameItem } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
+import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
 type Data = {
   chesscomUsername: string;
   gameCount: number;
   stats: GetGameStatsResponse | null;
   openingStats: GetOpeningStatsResponse | null;
+  recentGames: RecentGameItem[] | null;
+  gamesTotal: number;
 };
 
 type ChessState = {
@@ -25,6 +28,9 @@ type ChessState = {
   filterTimePeriod: string;
   filterMinRating: string;
   filterMaxRating: string;
+  activeTab: "stats" | "openings" | "games";
+  gamesOffset: number;
+  gamesLoading: boolean;
 };
 
 const useChessState = vlens.declareHook(
@@ -39,6 +45,9 @@ const useChessState = vlens.declareHook(
     filterTimePeriod: "all",
     filterMinRating: "",
     filterMaxRating: "",
+    activeTab: "stats",
+    gamesOffset: 0,
+    gamesLoading: false,
   })
 );
 
@@ -73,7 +82,7 @@ async function fetchStats(filter: GameFilter, data: Data) {
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0 });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
@@ -93,7 +102,23 @@ export async function fetch(route: string, prefix: string) {
     gameCount: profile?.gameCount ?? 0,
     stats,
     openingStats,
+    recentGames: null,
+    gamesTotal: 0,
   });
+}
+
+async function loadRecentGames(state: ChessState, data: Data) {
+  state.gamesLoading = true;
+  vlens.scheduleRedraw();
+  const [resp] = await server.GetRecentGames({
+    filter: buildFilter(state),
+    limit: 50,
+    offset: state.gamesOffset,
+  });
+  data.recentGames = resp?.games ?? [];
+  data.gamesTotal = resp?.total ?? 0;
+  state.gamesLoading = false;
+  vlens.scheduleRedraw();
 }
 
 export function view(
@@ -171,19 +196,46 @@ async function onFilterTimeClass(state: ChessState, data: Data, tc: string, even
   state.filterTimeClass = tc;
   vlens.scheduleRedraw();
   await fetchStats(buildFilter(state), data);
+  if (state.activeTab === "games") await loadRecentGames(state, data);
   vlens.scheduleRedraw();
 }
 
 async function onFilterTimePeriod(state: ChessState, data: Data, event: Event) {
   state.filterTimePeriod = (event.target as HTMLSelectElement).value;
   await fetchStats(buildFilter(state), data);
+  if (state.activeTab === "games") await loadRecentGames(state, data);
   vlens.scheduleRedraw();
 }
 
 async function onApplyRatingFilter(state: ChessState, data: Data, event: Event) {
   event.preventDefault();
   await fetchStats(buildFilter(state), data);
+  if (state.activeTab === "games") await loadRecentGames(state, data);
   vlens.scheduleRedraw();
+}
+
+async function onSwitchTab(state: ChessState, data: Data, tab: ChessState["activeTab"], event: Event) {
+  event.preventDefault();
+  state.activeTab = tab;
+  if (tab === "games" && data.recentGames === null) {
+    state.gamesOffset = 0;
+    await loadRecentGames(state, data);
+  } else {
+    vlens.scheduleRedraw();
+  }
+}
+
+async function onGamesPagePrev(state: ChessState, data: Data, event: Event) {
+  event.preventDefault();
+  if (state.gamesOffset === 0) return;
+  state.gamesOffset = Math.max(0, state.gamesOffset - 50);
+  await loadRecentGames(state, data);
+}
+
+async function onGamesPageNext(state: ChessState, data: Data, event: Event) {
+  event.preventDefault();
+  state.gamesOffset += 50;
+  await loadRecentGames(state, data);
 }
 
 const TIME_CLASS_ORDER = ["bullet", "blitz", "rapid", "daily"];
@@ -349,6 +401,97 @@ function OpeningsSection({
   );
 }
 
+function analysisBadge(status: number, whiteAccuracy: number, blackAccuracy: number, userColor: string): preact.ComponentChild {
+  if (status === ANALYSIS_NONE) return <span class="badge badge-none">—</span>;
+  if (status === ANALYSIS_PENDING) return <span class="badge badge-pending">Pending</span>;
+  if (status === ANALYSIS_ANALYZING) return <span class="badge badge-analyzing">Analyzing…</span>;
+  if (status === ANALYSIS_FAILED) return <span class="badge badge-failed">Failed</span>;
+  if (status === ANALYSIS_DONE) {
+    const acc = userColor === "white" ? whiteAccuracy : blackAccuracy;
+    return <span class="badge badge-done">{acc.toFixed(1)}%</span>;
+  }
+  return null;
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function RecentGamesSection({
+  data,
+  state,
+}: {
+  data: Data;
+  state: ChessState;
+}) {
+  if (state.gamesLoading && data.recentGames === null) {
+    return <div class="stats-section"><p>Loading games…</p></div>;
+  }
+  const games = data.recentGames ?? [];
+  if (games.length === 0 && !state.gamesLoading) {
+    return <div class="stats-section"><p>No games found.</p></div>;
+  }
+  const showPrev = state.gamesOffset > 0;
+  const showNext = state.gamesOffset + 50 < data.gamesTotal;
+  return (
+    <div class="stats-section">
+      <table class="stats-table games-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Opponent</th>
+            <th>Color</th>
+            <th>Result</th>
+            <th>Opening</th>
+            <th>Rating</th>
+            <th>Analysis</th>
+          </tr>
+        </thead>
+        <tbody>
+          {games.map((g) => {
+            const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
+            const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
+            const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
+            return (
+              <tr key={g.id} class="game-row" onClick={() => core.setRoute("/game/" + g.id)}>
+                <td>{formatDate(g.startTime)}</td>
+                <td>{opponent}</td>
+                <td>{g.userColor === "white" ? "♙ White" : "♟ Black"}</td>
+                <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
+                <td class="opening-cell">{g.opening || "—"}</td>
+                <td>{opponentRating}</td>
+                <td>{analysisBadge(g.analysisStatus, 0, 0, g.userColor)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {(showPrev || showNext) && (
+        <div class="pagination">
+          <button
+            class="btn btn-secondary btn-sm"
+            disabled={!showPrev || state.gamesLoading}
+            onClick={vlens.cachePartial(onGamesPagePrev, state, data)}
+          >
+            ← Previous
+          </button>
+          <span class="pagination-info">
+            {state.gamesOffset + 1}–{Math.min(state.gamesOffset + 50, data.gamesTotal)} of {data.gamesTotal}
+          </span>
+          <button
+            class="btn btn-secondary btn-sm"
+            disabled={!showNext || state.gamesLoading}
+            onClick={vlens.cachePartial(onGamesPageNext, state, data)}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatsSection({ stats }: { stats: GetGameStatsResponse | null }) {
   if (!stats) return null;
   const classes = TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]);
@@ -494,9 +637,28 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
             {state.statusMessage}
           </p>
         )}
-        {data.chesscomUsername && <FilterBar state={state} data={data} />}
-        <StatsSection stats={data.stats} />
-        <OpeningsSection openingStats={data.openingStats} state={state} />
+        {data.chesscomUsername && (
+          <>
+            <FilterBar state={state} data={data} />
+            <div class="tab-strip">
+              <button
+                class={"tab-btn" + (state.activeTab === "stats" ? " active" : "")}
+                onClick={vlens.cachePartial(onSwitchTab, state, data, "stats")}
+              >Stats</button>
+              <button
+                class={"tab-btn" + (state.activeTab === "openings" ? " active" : "")}
+                onClick={vlens.cachePartial(onSwitchTab, state, data, "openings")}
+              >Openings</button>
+              <button
+                class={"tab-btn" + (state.activeTab === "games" ? " active" : "")}
+                onClick={vlens.cachePartial(onSwitchTab, state, data, "games")}
+              >Recent Games</button>
+            </div>
+            {state.activeTab === "stats" && <StatsSection stats={data.stats} />}
+            {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} />}
+            {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
+          </>
+        )}
       </div>
     </div>
   </div>

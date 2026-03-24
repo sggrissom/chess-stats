@@ -265,17 +265,18 @@ func ComputeAccuracy(moves []MoveAnalysis) (whiteAccuracy, blackAccuracy float64
 		wpBefore := winProbability(prevEval)
 		wpAfter := winProbability(currEval)
 
-		// The accuracy of a move depends on how much WP the mover lost.
-		// For white, a decrease in wpAfter is bad. For black, an increase is bad.
+		// moves[i-1] is the move that was played; the delta prevEval→currEval is its effect.
+		// For white, a drop in wpAfter is bad. For black, a rise in wpAfter is bad.
+		prevColor := moves[i-1].Color
 		var wpLoss float64
-		if move.Color == "white" {
+		if prevColor == "white" {
 			wpLoss = wpBefore - wpAfter
 		} else {
 			wpLoss = wpAfter - wpBefore
 		}
 
 		acc := moveAccuracy(wpLoss)
-		if move.Color == "white" {
+		if prevColor == "white" {
 			whiteSum += acc
 			whiteCount++
 		} else {

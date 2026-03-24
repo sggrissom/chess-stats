@@ -3,9 +3,11 @@ package backend
 import (
 	"chess/cfg"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/corentings/chess/v2"
 	"go.hasen.dev/vbeam"
 	"go.hasen.dev/vbolt"
 	"go.hasen.dev/vpack"
@@ -17,6 +19,9 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, SyncGames)
 	vbeam.RegisterProc(app, GetGameStats)
 	vbeam.RegisterProc(app, GetOpeningStats)
+	vbeam.RegisterProc(app, GetRecentGames)
+	vbeam.RegisterProc(app, GetGameDetail)
+	vbeam.RegisterProc(app, RequestGameAnalysis)
 }
 
 // Request/Response types
@@ -100,6 +105,69 @@ type SyncGamesResponse struct {
 	Error         string `json:"error,omitempty"`
 	NewGamesAdded int    `json:"newGamesAdded"`
 	TotalGames    int    `json:"totalGames"`
+}
+
+type RecentGameItem struct {
+	Id             string `json:"id"`
+	WhiteUsername  string `json:"whiteUsername"`
+	WhiteRating    int    `json:"whiteRating"`
+	BlackUsername  string `json:"blackUsername"`
+	BlackRating    int    `json:"blackRating"`
+	TimeClass      string `json:"timeClass"`
+	TimeControl    string `json:"timeControl"`
+	Result         string `json:"result"`
+	UserColor      string `json:"userColor"`
+	StartTime      int64  `json:"startTime"`
+	Opening        string `json:"opening"`
+	OpeningECO     string `json:"openingEco"`
+	AnalysisStatus int    `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
+}
+
+type GetRecentGamesRequest struct {
+	Filter GameFilter `json:"filter"`
+	Limit  int        `json:"limit"`  // 0 = default 50
+	Offset int        `json:"offset"` // for pagination
+}
+
+type GetRecentGamesResponse struct {
+	Games []RecentGameItem `json:"games"`
+	Total int              `json:"total"`
+}
+
+type GetGameDetailRequest struct {
+	GameId string `json:"gameId"`
+}
+
+type MoveAnalysisItem struct {
+	MoveNumber int    `json:"moveNumber"`
+	Color      string `json:"color"`
+	MovePlayed string `json:"movePlayed"` // SAN when convertible, UCI fallback
+	BestMove   string `json:"bestMove"`   // SAN when convertible, UCI fallback
+	Evaluation int    `json:"evaluation"` // centipawns, white-positive
+	IsMate     bool   `json:"isMate"`
+	MateIn     int    `json:"mateIn"`
+}
+
+type GetGameDetailResponse struct {
+	Game           RecentGameItem     `json:"game"`
+	Pgn            string             `json:"pgn"`
+	AnalysisStatus int                `json:"analysisStatus"`
+	AnalysisDepth  int                `json:"analysisDepth"`
+	WhiteAccuracy  float64            `json:"whiteAccuracy"`
+	BlackAccuracy  float64            `json:"blackAccuracy"`
+	Moves          []MoveAnalysisItem `json:"moves"`
+	ErrorMessage   string             `json:"errorMessage,omitempty"`
+	AnalyzedAt     int64              `json:"analyzedAt"`
+}
+
+type RequestGameAnalysisRequest struct {
+	GameId string `json:"gameId"`
+}
+
+type RequestGameAnalysisResponse struct {
+	Queued bool   `json:"queued"`
+	Status int    `json:"status"`
+	Error  string `json:"error,omitempty"`
 }
 
 // Database types
@@ -552,4 +620,231 @@ func normalizeResult(r string) string {
 	default:
 		return "loss"
 	}
+}
+
+func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int) RecentGameItem {
+	return RecentGameItem{
+		Id:             g.Id,
+		WhiteUsername:  g.WhiteUsername,
+		WhiteRating:    g.WhiteRating,
+		BlackUsername:  g.BlackUsername,
+		BlackRating:    g.BlackRating,
+		TimeClass:      g.TimeClass,
+		TimeControl:    g.TimeControl,
+		Result:         g.Result,
+		UserColor:      g.UserColor,
+		StartTime:      g.StartTime,
+		Opening:        opening.Opening,
+		OpeningECO:     opening.ECO,
+		AnalysisStatus: analysisStatus,
+	}
+}
+
+func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRecentGamesResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var games []Game
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var g Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
+		if gameMatchesFilter(&g, req.Filter) {
+			games = append(games, g)
+		}
+		return true
+	})
+
+	sort.Slice(games, func(i, j int) bool {
+		return games[i].StartTime > games[j].StartTime
+	})
+
+	resp.Total = len(games)
+
+	start := req.Offset
+	if start >= len(games) {
+		resp.Games = []RecentGameItem{}
+		return
+	}
+	end := start + limit
+	if end > len(games) {
+		end = len(games)
+	}
+	page := games[start:end]
+
+	resp.Games = make([]RecentGameItem, len(page))
+	for i, g := range page {
+		var opening OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, g.Id, &opening)
+		status := AnalysisStatusNone
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, g.Id) {
+			var analysis GameAnalysis
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, g.Id, &analysis)
+			status = analysis.Status
+		}
+		resp.Games[i] = gameToRecentItem(g, opening, status)
+	}
+	return
+}
+
+func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDetailResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	if req.GameId == "" {
+		return
+	}
+
+	var g Game
+	vbolt.Read(ctx.Tx, GameBkt, req.GameId, &g)
+	if g.Id == "" || g.UserId != user.Id {
+		return
+	}
+
+	var opening OpeningInfo
+	vbolt.Read(ctx.Tx, GameOpeningBkt, req.GameId, &opening)
+
+	var pgn string
+	vbolt.Read(ctx.Tx, GamePgnBkt, req.GameId, &pgn)
+
+	status := AnalysisStatusNone
+	var analysis GameAnalysis
+	if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, req.GameId) {
+		vbolt.Read(ctx.Tx, GameAnalysisBkt, req.GameId, &analysis)
+		status = analysis.Status
+	}
+
+	resp.Game = gameToRecentItem(g, opening, status)
+	resp.Pgn = pgn
+	resp.AnalysisStatus = status
+	resp.AnalysisDepth = analysis.AnalysisDepth
+	resp.WhiteAccuracy = analysis.WhiteAccuracy
+	resp.BlackAccuracy = analysis.BlackAccuracy
+	resp.ErrorMessage = analysis.ErrorMessage
+	resp.AnalyzedAt = analysis.AnalyzedAt
+
+	if status == AnalysisStatusDone && len(analysis.Moves) > 0 {
+		resp.Moves = convertMovesToSAN(pgn, analysis.Moves)
+	}
+	return
+}
+
+func RequestGameAnalysis(ctx *vbeam.Context, req RequestGameAnalysisRequest) (resp RequestGameAnalysisResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		resp.Error = "Authentication required"
+		return
+	}
+
+	var g Game
+	vbolt.Read(ctx.Tx, GameBkt, req.GameId, &g)
+	if g.Id == "" || g.UserId != user.Id {
+		resp.Error = "Game not found"
+		return
+	}
+
+	if g.Rules != "" && g.Rules != "chess" {
+		resp.Error = fmt.Sprintf("Analysis not available for variant: %s", g.Rules)
+		return
+	}
+
+	if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, req.GameId) {
+		var existing GameAnalysis
+		vbolt.Read(ctx.Tx, GameAnalysisBkt, req.GameId, &existing)
+		if existing.Status == AnalysisStatusDone || existing.Status == AnalysisStatusAnalyzing {
+			resp.Status = existing.Status
+			return
+		}
+	}
+
+	vbeam.UseWriteTx(ctx)
+	pending := GameAnalysis{
+		GameId: req.GameId,
+		Status: AnalysisStatusPending,
+	}
+	vbolt.Write(ctx.Tx, GameAnalysisBkt, req.GameId, &pending)
+	vbolt.SetTargetSingleTerm(ctx.Tx, AnalysisByStatusIdx, req.GameId, AnalysisStatusPending)
+	vbolt.TxCommit(ctx.Tx)
+
+	if qErr := QueueGameAnalysis(AnalysisJob{GameId: req.GameId}); qErr != nil {
+		resp.Error = qErr.Error()
+		resp.Status = AnalysisStatusPending
+		return
+	}
+
+	resp.Queued = true
+	resp.Status = AnalysisStatusPending
+	return
+}
+
+// convertMovesToSAN maps stored MoveAnalysis (UCI notation) to MoveAnalysisItem (SAN notation).
+// Falls back to UCI strings if parsing fails.
+func convertMovesToSAN(pgn string, moves []MoveAnalysis) []MoveAnalysisItem {
+	notation := chess.AlgebraicNotation{}
+
+	// Parse the PGN to get positions
+	reader := strings.NewReader(pgn)
+	pgnReader, parseErr := chess.PGN(reader)
+	if parseErr != nil {
+		return uciMoveItems(moves)
+	}
+	game := chess.NewGame(pgnReader)
+	positions := game.Positions()
+	gameMoves := game.Moves()
+
+	items := make([]MoveAnalysisItem, len(moves))
+	for i, m := range moves {
+		item := MoveAnalysisItem{
+			MoveNumber: m.MoveNumber,
+			Color:      m.Color,
+			MovePlayed: m.MovePlayed,
+			BestMove:   m.BestMove,
+			Evaluation: m.Evaluation,
+			IsMate:     m.IsMate,
+			MateIn:     m.MateIn,
+		}
+
+		// Convert MovePlayed to SAN using the stored game move at this ply
+		if i < len(gameMoves) && i < len(positions) {
+			item.MovePlayed = notation.Encode(positions[i], gameMoves[i])
+		}
+
+		// Convert BestMove (UCI) to SAN by finding the matching legal move
+		if i < len(positions) && m.BestMove != "" {
+			pos := positions[i]
+			legalMoves := pos.ValidMoves()
+			for j := range legalMoves {
+				if legalMoves[j].String() == m.BestMove {
+					item.BestMove = notation.Encode(pos, &legalMoves[j])
+					break
+				}
+			}
+		}
+
+		items[i] = item
+	}
+	return items
+}
+
+func uciMoveItems(moves []MoveAnalysis) []MoveAnalysisItem {
+	items := make([]MoveAnalysisItem, len(moves))
+	for i, m := range moves {
+		items[i] = MoveAnalysisItem{
+			MoveNumber: m.MoveNumber,
+			Color:      m.Color,
+			MovePlayed: m.MovePlayed,
+			BestMove:   m.BestMove,
+			Evaluation: m.Evaluation,
+			IsMate:     m.IsMate,
+			MateIn:     m.MateIn,
+		}
+	}
+	return items
 }
