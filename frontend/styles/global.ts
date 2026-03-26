@@ -988,15 +988,15 @@ block(`
 `);
 
 block(`
-.acc-great { background-color: var(--win); color: var(--win); }
+.acc-great { background-color: var(--win); color: white; }
 `);
 
 block(`
-.acc-good { background-color: var(--warning); color: var(--warning); }
+.acc-good { background-color: var(--warning); color: white; }
 `);
 
 block(`
-.acc-poor { background-color: var(--loss); color: var(--loss); }
+.acc-poor { background-color: var(--loss); color: white; }
 `);
 
 // ── Move Table ─────────────────────────────────────────────────────────────────
