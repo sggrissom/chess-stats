@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, GameFilter, RecentGameItem } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -288,58 +288,55 @@ function ColorCells({ r }: { r: ColorRecord }) {
   );
 }
 
-function OpeningsSection({
-  openingStats,
+function OpeningColorSection({
+  title,
+  entries,
+  getColor,
+  getVariationColor,
+  otherKey,
   state,
 }: {
-  openingStats: GetOpeningStatsResponse | null;
+  title: string;
+  entries: [string, OpeningRecord][];
+  getColor: (rec: OpeningRecord) => ColorRecord;
+  getVariationColor: (vr: VariationRecord) => ColorRecord;
+  otherKey: string;
   state: ChessState;
 }) {
-  if (!openingStats) return null;
-  const entries = Object.entries(openingStats.byOpening).sort(
-    (a, b) => totalOpening(b[1]) - totalOpening(a[1])
-  );
-  if (entries.length === 0) return null;
+  const withGames = entries.filter(([, rec]) => totalColor(getColor(rec)) > 0);
+  if (withGames.length === 0) return null;
 
-  const grandTotal = entries.reduce((sum, [, rec]) => sum + totalOpening(rec), 0);
+  const sorted = [...withGames].sort((a, b) => totalColor(getColor(b[1])) - totalColor(getColor(a[1])));
+  const grandTotal = sorted.reduce((sum, [, rec]) => sum + totalColor(getColor(rec)), 0);
   const threshold = grandTotal * 0.05;
-  const mainEntries = entries.filter(([, rec]) => totalOpening(rec) >= threshold);
-  const otherEntries = entries.filter(([, rec]) => totalOpening(rec) < threshold);
+  const mainEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) >= threshold);
+  const otherEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) < threshold);
 
-  const otherWhite: ColorRecord = { wins: 0, losses: 0, draws: 0 };
-  const otherBlack: ColorRecord = { wins: 0, losses: 0, draws: 0 };
+  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0 };
   for (const [, rec] of otherEntries) {
-    otherWhite.wins += rec.asWhite.wins;
-    otherWhite.losses += rec.asWhite.losses;
-    otherWhite.draws += rec.asWhite.draws;
-    otherBlack.wins += rec.asBlack.wins;
-    otherBlack.losses += rec.asBlack.losses;
-    otherBlack.draws += rec.asBlack.draws;
+    const c = getColor(rec);
+    otherAgg.wins += c.wins;
+    otherAgg.losses += c.losses;
+    otherAgg.draws += c.draws;
   }
-  const otherExpanded = !!state.expandedOpenings["__other__"];
+  const otherExpanded = !!state.expandedOpenings[otherKey];
 
   return (
     <div class="stats-section">
-      <h3>Openings</h3>
+      <h3>{title}</h3>
       <table class="stats-table">
         <thead>
           <tr>
             <th></th>
-            <th colspan={4}>As White</th>
-            <th colspan={4}>As Black</th>
-          </tr>
-          <tr>
-            <th></th>
-            <th>W</th><th>L</th><th>D</th><th>Win%</th>
             <th>W</th><th>L</th><th>D</th><th>Win%</th>
           </tr>
         </thead>
         <tbody>
           {mainEntries.map(([name, rec]) => {
             const expanded = !!state.expandedOpenings[name];
-            const variations = Object.entries(rec.variations ?? {}).sort(
-              (a, b) => (totalColor(b[1].asWhite) + totalColor(b[1].asBlack)) - (totalColor(a[1].asWhite) + totalColor(a[1].asBlack))
-            );
+            const variations = Object.entries(rec.variations ?? {})
+              .filter(([, vr]) => totalColor(getVariationColor(vr)) > 0)
+              .sort((a, b) => totalColor(getVariationColor(b[1])) - totalColor(getVariationColor(a[1])));
             return (
               <>
                 <tr key={name}>
@@ -356,15 +353,13 @@ function OpeningsSection({
                       name
                     )}
                   </td>
-                  <ColorCells r={rec.asWhite} />
-                  <ColorCells r={rec.asBlack} />
+                  <ColorCells r={getColor(rec)} />
                 </tr>
                 {expanded &&
                   variations.map(([varName, vr]) => (
                     <tr key={`${name}/${varName}`} class="variation-row">
                       <td style="padding-left: 1.5em">{varName}</td>
-                      <ColorCells r={vr.asWhite} />
-                      <ColorCells r={vr.asBlack} />
+                      <ColorCells r={getVariationColor(vr)} />
                     </tr>
                   ))}
               </>
@@ -372,25 +367,23 @@ function OpeningsSection({
           })}
           {otherEntries.length > 0 && (
             <>
-              <tr key="__other__">
+              <tr key={otherKey}>
                 <td>
                   <a
                     href="#"
                     class="opening-toggle"
-                    onClick={vlens.cachePartial(toggleOpening, state, "__other__")}
+                    onClick={vlens.cachePartial(toggleOpening, state, otherKey)}
                   >
                     {otherExpanded ? "▾" : "▸"} Other ({otherEntries.length} openings)
                   </a>
                 </td>
-                <ColorCells r={otherWhite} />
-                <ColorCells r={otherBlack} />
+                <ColorCells r={otherAgg} />
               </tr>
               {otherExpanded &&
                 otherEntries.map(([name, rec]) => (
-                  <tr key={`__other__/${name}`} class="variation-row">
+                  <tr key={`${otherKey}/${name}`} class="variation-row">
                     <td style="padding-left: 1.5em">{name}</td>
-                    <ColorCells r={rec.asWhite} />
-                    <ColorCells r={rec.asBlack} />
+                    <ColorCells r={getColor(rec)} />
                   </tr>
                 ))}
             </>
@@ -398,6 +391,39 @@ function OpeningsSection({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function OpeningsSection({
+  openingStats,
+  state,
+}: {
+  openingStats: GetOpeningStatsResponse | null;
+  state: ChessState;
+}) {
+  if (!openingStats) return null;
+  const entries = Object.entries(openingStats.byOpening);
+  if (entries.length === 0) return null;
+
+  return (
+    <>
+      <OpeningColorSection
+        title="Openings as White"
+        entries={entries}
+        getColor={(rec) => rec.asWhite}
+        getVariationColor={(vr) => vr.asWhite}
+        otherKey="__other_white__"
+        state={state}
+      />
+      <OpeningColorSection
+        title="Openings as Black"
+        entries={entries}
+        getColor={(rec) => rec.asBlack}
+        getVariationColor={(vr) => vr.asBlack}
+        otherKey="__other_black__"
+        state={state}
+      />
+    </>
   );
 }
 
