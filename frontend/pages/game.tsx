@@ -196,6 +196,54 @@ function AccuracyBars({ white, black }: { white: number; black: number }) {
   );
 }
 
+function EvalGraph({ moves }: { moves: MoveAnalysisItem[] }) {
+  const W = 600;
+  const H = 120;
+  const mid = H / 2;
+
+  function clampEval(m: MoveAnalysisItem): number {
+    if (m.isMate) return m.mateIn > 0 ? 1000 : -1000;
+    return Math.max(-1000, Math.min(1000, m.evaluation));
+  }
+
+  const n = moves.length;
+  if (n === 0) return null;
+
+  const pts = moves.map((m, i) => {
+    const x = n > 1 ? (i / (n - 1)) * W : W / 2;
+    const y = mid - (clampEval(m) / 1000) * mid;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const polyPoints = [`0,${mid}`, ...pts, `${W},${mid}`].join(" ");
+  const linePoints = pts.join(" ");
+
+  return (
+    <div class="eval-graph-section">
+      <h4>Evaluation</h4>
+      <svg
+        class="eval-graph"
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <clipPath id="eg-above">
+            <rect x="0" y="0" width={W} height={mid} />
+          </clipPath>
+          <clipPath id="eg-below">
+            <rect x="0" y={mid} width={W} height={mid} />
+          </clipPath>
+        </defs>
+        <polygon points={polyPoints} class="eval-graph-white" clipPath="url(#eg-above)" />
+        <polygon points={polyPoints} class="eval-graph-black" clipPath="url(#eg-below)" />
+        <line x1="0" y1={mid} x2={W} y2={mid} class="eval-graph-zero" />
+        <polyline points={linePoints} class="eval-graph-line" />
+      </svg>
+    </div>
+  );
+}
+
 function MoveTable({ moves }: { moves: MoveAnalysisItem[] }) {
   // Group into pairs: white move at even index, black move at odd
   const rows: Array<{ num: number; white?: MoveAnalysisItem; black?: MoveAnalysisItem }> = [];
@@ -319,6 +367,7 @@ function AnalysisPanel({
   return (
     <div class="analysis-panel">
       <AccuracyBars white={detail.whiteAccuracy} black={detail.blackAccuracy} />
+      {detail.moves && detail.moves.length > 0 && <EvalGraph moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <MoveTable moves={detail.moves} />}
     </div>
   );

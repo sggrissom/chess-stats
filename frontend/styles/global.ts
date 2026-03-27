@@ -1068,6 +1068,64 @@ block(`
 .eval-neutral { color: var(--text-muted); }
 `);
 
+// ── Eval Graph ──────────────────────────────────────────────────────────────────
+
+block(`
+.eval-graph-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+}
+`);
+
+block(`
+.eval-graph-section h4 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+`);
+
+block(`
+.eval-graph {
+  display: block;
+  width: 100%;
+  height: 120px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+`);
+
+block(`
+.eval-graph-white { fill: rgba(230, 230, 230, 0.82); }
+`);
+
+block(`
+.eval-graph-black { fill: rgba(20, 20, 20, 0.82); }
+`);
+
+block(`
+.eval-graph-zero {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+`);
+
+block(`
+.eval-graph-line {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+`);
+
 // ── PGN ────────────────────────────────────────────────────────────────────────
 
 block(`
