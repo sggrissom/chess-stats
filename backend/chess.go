@@ -22,6 +22,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetRecentGames)
 	vbeam.RegisterProc(app, GetGameDetail)
 	vbeam.RegisterProc(app, RequestGameAnalysis)
+	vbeam.RegisterProc(app, RequestAllGameAnalysis)
 }
 
 // Request/Response types
@@ -169,6 +170,13 @@ type RequestGameAnalysisRequest struct {
 type RequestGameAnalysisResponse struct {
 	Queued bool   `json:"queued"`
 	Status int    `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+type RequestAllGameAnalysisRequest struct{}
+
+type RequestAllGameAnalysisResponse struct {
+	Queued int    `json:"queued"`
 	Error  string `json:"error,omitempty"`
 }
 
@@ -831,6 +839,61 @@ func RequestGameAnalysis(ctx *vbeam.Context, req RequestGameAnalysisRequest) (re
 
 	resp.Queued = true
 	resp.Status = AnalysisStatusPending
+	return
+}
+
+func RequestAllGameAnalysis(ctx *vbeam.Context, req RequestAllGameAnalysisRequest) (resp RequestAllGameAnalysisResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		resp.Error = "Authentication required"
+		return
+	}
+
+	if globalAnalysisWorker == nil {
+		resp.Error = "Analysis worker not available"
+		return
+	}
+
+	const maxBulkAnalysis = 1000
+	var gameIds []string
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		if len(gameIds) >= maxBulkAnalysis {
+			return false
+		}
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
+			return true
+		}
+		var g Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
+		if g.Rules != "" && g.Rules != "chess" {
+			return true
+		}
+		gameIds = append(gameIds, gameId)
+		return true
+	})
+
+	if len(gameIds) == 0 {
+		return
+	}
+
+	vbeam.UseWriteTx(ctx)
+	for _, gameId := range gameIds {
+		pending := GameAnalysis{GameId: gameId, Status: AnalysisStatusPending}
+		vbolt.Write(ctx.Tx, GameAnalysisBkt, gameId, &pending)
+		vbolt.SetTargetSingleTerm(ctx.Tx, AnalysisByStatusIdx, gameId, AnalysisStatusPending)
+	}
+	vbolt.TxCommit(ctx.Tx)
+
+	go func(ids []string) {
+		for _, id := range ids {
+			if globalAnalysisWorker == nil {
+				return
+			}
+			globalAnalysisWorker.jobQueue <- AnalysisJob{GameId: id}
+		}
+	}(gameIds)
+
+	resp.Queued = len(gameIds)
 	return
 }
 

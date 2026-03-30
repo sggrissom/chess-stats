@@ -31,6 +31,7 @@ type ChessState = {
   activeTab: "stats" | "openings" | "games";
   gamesOffset: number;
   gamesLoading: boolean;
+  analyzingAll: boolean;
 };
 
 const useChessState = vlens.declareHook(
@@ -48,6 +49,7 @@ const useChessState = vlens.declareHook(
     activeTab: "stats",
     gamesOffset: 0,
     gamesLoading: false,
+    analyzingAll: false,
   })
 );
 
@@ -179,6 +181,28 @@ async function onSyncGames(state: ChessState, data: Data, event: Event) {
     await fetchStats(buildFilter(state), data);
   } else {
     state.statusMessage = resp?.error || "Sync failed";
+    state.isError = true;
+  }
+  vlens.scheduleRedraw();
+}
+
+async function onAnalyzeAllGames(state: ChessState, _data: Data, event: Event) {
+  event.preventDefault();
+  state.analyzingAll = true;
+  state.statusMessage = "";
+  state.isError = false;
+  vlens.scheduleRedraw();
+
+  const [resp] = await server.RequestAllGameAnalysis({});
+
+  state.analyzingAll = false;
+  if (resp && !resp.error) {
+    state.statusMessage = resp.queued === 0
+      ? "All games are already analyzed."
+      : `Queued ${resp.queued} game${resp.queued === 1 ? "" : "s"} for analysis.`;
+    state.isError = false;
+  } else {
+    state.statusMessage = resp?.error || "Failed to queue games for analysis";
     state.isError = true;
   }
   vlens.scheduleRedraw();
@@ -642,6 +666,13 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
               onClick={vlens.cachePartial(onSyncGames, state, data)}
             >
               {state.syncing ? "Syncing..." : "Sync Games"}
+            </button>
+            <button
+              class="btn btn-secondary"
+              disabled={state.analyzingAll}
+              onClick={vlens.cachePartial(onAnalyzeAllGames, state, data)}
+            >
+              {state.analyzingAll ? "Queueing..." : "Analyze All Games"}
             </button>
           </div>
         ) : (

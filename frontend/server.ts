@@ -98,6 +98,14 @@ export interface RequestGameAnalysisResponse {
     error: string
 }
 
+export interface RequestAllGameAnalysisRequest {
+}
+
+export interface RequestAllGameAnalysisResponse {
+    queued: number
+    error: string
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -188,5 +196,9 @@ export async function GetGameDetail(data: GetGameDetailRequest): Promise<rpc.Res
 
 export async function RequestGameAnalysis(data: RequestGameAnalysisRequest): Promise<rpc.Response<RequestGameAnalysisResponse>> {
     return await rpc.call<RequestGameAnalysisResponse>('RequestGameAnalysis', JSON.stringify(data));
+}
+
+export async function RequestAllGameAnalysis(data: RequestAllGameAnalysisRequest): Promise<rpc.Response<RequestAllGameAnalysisResponse>> {
+    return await rpc.call<RequestAllGameAnalysisResponse>('RequestAllGameAnalysis', JSON.stringify(data));
 }
 
