@@ -141,6 +141,8 @@ export interface ColorRecord {
     wins: number
     losses: number
     draws: number
+    openingEvalSum: number
+    openingEvalN: number
 }
 
 export interface VariationRecord {

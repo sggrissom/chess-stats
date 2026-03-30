@@ -759,6 +759,14 @@ block(`
 }
 `);
 
+block(`
+.eval-pos { color: var(--win); }
+`);
+
+block(`
+.eval-neg { color: var(--danger); }
+`);
+
 // ── Pagination ─────────────────────────────────────────────────────────────────
 
 block(`

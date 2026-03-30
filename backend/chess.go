@@ -79,9 +79,11 @@ func gameMatchesFilter(game *Game, f GameFilter) bool {
 }
 
 type ColorRecord struct {
-	Wins   int `json:"wins"`
-	Losses int `json:"losses"`
-	Draws  int `json:"draws"`
+	Wins           int `json:"wins"`
+	Losses         int `json:"losses"`
+	Draws          int `json:"draws"`
+	OpeningEvalSum int `json:"openingEvalSum"` // centipawns, user perspective, summed across analyzed games
+	OpeningEvalN   int `json:"openingEvalN"`   // count of games with opening analysis
 }
 
 type VariationRecord struct {
@@ -459,6 +461,41 @@ func GetGameStats(ctx *vbeam.Context, req GameFilter) (resp GetGameStatsResponse
 	return
 }
 
+// OpeningEndMove is the full-move number used as the end of the opening phase.
+const OpeningEndMove = 10
+
+// openingEvalForGame returns the centipawn evaluation at the end of the opening phase
+// from the user's perspective (positive = user is winning). Returns (0, false) if
+// analysis is unavailable.
+func openingEvalForGame(analysis *GameAnalysis, userColor string) (int, bool) {
+	if analysis.Status != AnalysisStatusDone || len(analysis.Moves) == 0 {
+		return 0, false
+	}
+	lastIdx := 0
+	for i, m := range analysis.Moves {
+		if m.MoveNumber <= OpeningEndMove {
+			lastIdx = i
+		} else {
+			break
+		}
+	}
+	m := analysis.Moves[lastIdx]
+	var eval int
+	if m.IsMate {
+		if m.MateIn > 0 {
+			eval = 1000
+		} else {
+			eval = -1000
+		}
+	} else {
+		eval = m.Evaluation
+	}
+	if userColor == "black" {
+		eval = -eval
+	}
+	return eval, true
+}
+
 func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsResponse, err error) {
 	user, authErr := GetAuthUser(ctx)
 	if authErr != nil || user.Id == 0 {
@@ -499,17 +536,30 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 				cr.Draws++
 			}
 		}
+		var analysis GameAnalysis
+		vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+		openingEval, hasEval := openingEvalForGame(&analysis, game.UserColor)
+		bumpEval := func(cr *ColorRecord) {
+			if hasEval {
+				cr.OpeningEvalSum += openingEval
+				cr.OpeningEvalN++
+			}
+		}
 		if game.UserColor == "white" {
 			bumpColor(&rec.AsWhite)
+			bumpEval(&rec.AsWhite)
 		} else {
 			bumpColor(&rec.AsBlack)
+			bumpEval(&rec.AsBlack)
 		}
 		if info.Variation != "" {
 			vr := rec.Variations[info.Variation]
 			if game.UserColor == "white" {
 				bumpColor(&vr.AsWhite)
+				bumpEval(&vr.AsWhite)
 			} else {
 				bumpColor(&vr.AsBlack)
+				bumpEval(&vr.AsBlack)
 			}
 			rec.Variations[info.Variation] = vr
 		}

@@ -275,15 +275,25 @@ function toggleOpening(state: ChessState, name: string, event: Event) {
   vlens.scheduleRedraw();
 }
 
+function formatOpeningEval(r: ColorRecord): preact.ComponentChild {
+  if (!r.openingEvalN) return <td style="color:var(--text-muted)">—</td>;
+  const avg = r.openingEvalSum / r.openingEvalN;
+  const pawns = avg / 100;
+  const text = (pawns >= 0 ? "+" : "") + pawns.toFixed(1);
+  const cls = avg >= 30 ? "eval-pos" : avg <= -30 ? "eval-neg" : "";
+  return <td class={cls}>{text}</td>;
+}
+
 function ColorCells({ r }: { r: ColorRecord }) {
   const total = totalColor(r);
-  if (total === 0) return <><td>—</td><td>—</td><td>—</td><td>—</td></>;
+  if (total === 0) return <><td>—</td><td>—</td><td>—</td><td>—</td><td style="color:var(--text-muted)">—</td></>;
   return (
     <>
       <td>{r.wins}</td>
       <td>{r.losses}</td>
       <td>{r.draws}</td>
       <td>{winPct(r)}</td>
+      {formatOpeningEval(r)}
     </>
   );
 }
@@ -312,12 +322,14 @@ function OpeningColorSection({
   const mainEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) >= threshold);
   const otherEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) < threshold);
 
-  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0 };
+  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0, openingEvalSum: 0, openingEvalN: 0 };
   for (const [, rec] of otherEntries) {
     const c = getColor(rec);
     otherAgg.wins += c.wins;
     otherAgg.losses += c.losses;
     otherAgg.draws += c.draws;
+    otherAgg.openingEvalSum += c.openingEvalSum ?? 0;
+    otherAgg.openingEvalN += c.openingEvalN ?? 0;
   }
   const otherExpanded = !!state.expandedOpenings[otherKey];
 
@@ -328,7 +340,7 @@ function OpeningColorSection({
         <thead>
           <tr>
             <th></th>
-            <th>W</th><th>L</th><th>D</th><th>Win%</th>
+            <th>W</th><th>L</th><th>D</th><th>Win%</th><th>Opening</th>
           </tr>
         </thead>
         <tbody>
