@@ -106,6 +106,10 @@ export interface RequestAllGameAnalysisResponse {
     error: string
 }
 
+export interface GetRatingHistoryResponse {
+    points: RatingPoint[]
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -143,6 +147,13 @@ export interface MoveAnalysisItem {
     evaluation: number
     isMate: boolean
     mateIn: number
+}
+
+export interface RatingPoint {
+    startTime: number
+    rating: number
+    result: string
+    timeClass: string
 }
 
 export interface ColorRecord {
@@ -200,5 +211,9 @@ export async function RequestGameAnalysis(data: RequestGameAnalysisRequest): Pro
 
 export async function RequestAllGameAnalysis(data: RequestAllGameAnalysisRequest): Promise<rpc.Response<RequestAllGameAnalysisResponse>> {
     return await rpc.call<RequestAllGameAnalysisResponse>('RequestAllGameAnalysis', JSON.stringify(data));
+}
+
+export async function GetRatingHistory(data: GameFilter): Promise<rpc.Response<GetRatingHistoryResponse>> {
+    return await rpc.call<GetRatingHistoryResponse>('GetRatingHistory', JSON.stringify(data));
 }
 

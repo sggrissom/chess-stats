@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -15,6 +15,7 @@ type Data = {
   openingStats: GetOpeningStatsResponse | null;
   recentGames: RecentGameItem[] | null;
   gamesTotal: number;
+  ratingHistory: GetRatingHistoryResponse | null;
 };
 
 type ChessState = {
@@ -32,6 +33,7 @@ type ChessState = {
   gamesOffset: number;
   gamesLoading: boolean;
   analyzingAll: boolean;
+  ratingChartSeries: Record<string, boolean>;
 };
 
 const useChessState = vlens.declareHook(
@@ -50,6 +52,7 @@ const useChessState = vlens.declareHook(
     gamesOffset: 0,
     gamesLoading: false,
     analyzingAll: false,
+    ratingChartSeries: { bullet: true, blitz: true, rapid: true, daily: true },
   })
 );
 
@@ -74,30 +77,35 @@ function buildFilter(state: ChessState): GameFilter {
 }
 
 async function fetchStats(filter: GameFilter, data: Data) {
-  const [[s], [os]] = await Promise.all([
+  const [[s], [os], [rh]] = await Promise.all([
     server.GetGameStats(filter),
     server.GetOpeningStats(filter),
+    server.GetRatingHistory(filter),
   ]);
   data.stats = s ?? null;
   data.openingStats = os ?? null;
+  data.ratingHistory = rh ?? null;
 }
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0 });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
   let stats: GetGameStatsResponse | null = null;
   let openingStats: GetOpeningStatsResponse | null = null;
+  let ratingHistory: GetRatingHistoryResponse | null = null;
   if (username) {
     const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
-    const [[s], [os]] = await Promise.all([
+    const [[s], [os], [rh]] = await Promise.all([
       server.GetGameStats(defaultFilter),
       server.GetOpeningStats(defaultFilter),
+      server.GetRatingHistory(defaultFilter),
     ]);
     stats = s ?? null;
     openingStats = os ?? null;
+    ratingHistory = rh ?? null;
   }
   return rpc.ok<Data>({
     chesscomUsername: username,
@@ -106,6 +114,7 @@ export async function fetch(route: string, prefix: string) {
     openingStats,
     recentGames: null,
     gamesTotal: 0,
+    ratingHistory,
   });
 }
 
@@ -235,6 +244,12 @@ async function onApplyRatingFilter(state: ChessState, data: Data, event: Event) 
   event.preventDefault();
   await fetchStats(buildFilter(state), data);
   if (state.activeTab === "games") await loadRecentGames(state, data);
+  vlens.scheduleRedraw();
+}
+
+function onToggleRatingSeries(state: ChessState, tc: string, event: Event) {
+  event.preventDefault();
+  state.ratingChartSeries = { ...state.ratingChartSeries, [tc]: !state.ratingChartSeries[tc] };
   vlens.scheduleRedraw();
 }
 
@@ -554,30 +569,176 @@ function RecentGamesSection({
   );
 }
 
-function StatsSection({ stats }: { stats: GetGameStatsResponse | null }) {
-  if (!stats) return null;
-  const classes = TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]);
+const CHART_W = 600;
+const CHART_H = 180;
+const PAD_LEFT = 42;
+const PAD_RIGHT = 8;
+const PAD_TOP = 10;
+const PAD_BOTTOM = 24;
+const PLOT_W = CHART_W - PAD_LEFT - PAD_RIGHT;
+const PLOT_H = CHART_H - PAD_TOP - PAD_BOTTOM;
+
+const SERIES_COLORS: Record<string, string> = {
+  bullet: "#58a6ff",
+  blitz: "#d29922",
+  rapid: "#3fb950",
+  daily: "#8b949e",
+};
+
+function RatingChart({ ratingHistory, state }: { ratingHistory: GetRatingHistoryResponse; state: ChessState }) {
+  const points = ratingHistory.points;
+  if (points.length === 0) {
+    return (
+      <div class="stats-section">
+        <p style="color:var(--text-muted);font-size:13px">No rating data in this period.</p>
+      </div>
+    );
+  }
+
+  const visibleClasses = Object.entries(state.ratingChartSeries).filter(([, on]) => on).map(([tc]) => tc);
+  const visiblePoints = points.filter(p => visibleClasses.includes(p.timeClass));
+
+  const minTime = points[0].startTime;
+  const maxTime = points[points.length - 1].startTime;
+  const timeSpan = maxTime - minTime || 1;
+
+  const visRatings = visiblePoints.map(p => p.rating);
+  const allRatings = points.map(p => p.rating);
+  const ratingMin = Math.min(...(visRatings.length ? visRatings : allRatings));
+  const ratingMax = Math.max(...(visRatings.length ? visRatings : allRatings));
+  const ratingSpan = ratingMax - ratingMin || 50;
+  const rPad = ratingSpan * 0.05;
+  const rMin = ratingMin - rPad;
+  const rMax = ratingMax + rPad;
+  const rRange = rMax - rMin;
+
+  function toX(ts: number): number {
+    return PAD_LEFT + ((ts - minTime) / timeSpan) * PLOT_W;
+  }
+  function toY(rating: number): number {
+    return PAD_TOP + (1 - (rating - rMin) / rRange) * PLOT_H;
+  }
+
+  const byClass: Record<string, RatingPoint[]> = {};
+  for (const p of visiblePoints) {
+    if (!byClass[p.timeClass]) byClass[p.timeClass] = [];
+    byClass[p.timeClass].push(p);
+  }
+
+  const tickStep = Math.ceil(ratingSpan / 4 / 25) * 25 || 25;
+  const firstTick = Math.ceil(rMin / 25) * 25;
+  const ticks: number[] = [];
+  for (let t = firstTick; t <= rMax; t += tickStep) ticks.push(t);
+
+  function formatXLabel(ts: number): string {
+    const d = new Date(ts * 1000);
+    if (timeSpan < 8 * 86400) {
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+    return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  }
+
+  const presentClasses = TIME_CLASS_ORDER.filter(tc => points.some(p => p.timeClass === tc));
+
   return (
-    <div class="stats-section">
-      <h3>Record</h3>
-      <table class="stats-table">
-        <thead>
-          <tr>
-            <th></th>
-            <th>W</th>
-            <th>L</th>
-            <th>D</th>
-            <th>Win%</th>
-          </tr>
-        </thead>
-        <tbody>
-          <RecordRow label="Overall" r={stats.overall} />
-          {classes.map((tc) => (
-            <RecordRow key={tc} label={tc.charAt(0).toUpperCase() + tc.slice(1)} r={stats.byClass[tc]} />
+    <div class="rating-chart-section">
+      <div class="rating-chart-header">
+        <h3 style="margin:0">Rating Over Time</h3>
+        <div class="rating-chart-legend">
+          {presentClasses.map(tc => (
+            <button
+              key={tc}
+              class={"rating-legend-pill" + (state.ratingChartSeries[tc] ? " active" : "")}
+              style={state.ratingChartSeries[tc] ? `border-color:${SERIES_COLORS[tc]};color:${SERIES_COLORS[tc]}` : ""}
+              onClick={vlens.cachePartial(onToggleRatingSeries, state, tc)}
+            >
+              {tc.charAt(0).toUpperCase() + tc.slice(1)}
+            </button>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
+      <svg
+        class="rating-chart"
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {ticks.map(tick => {
+          const y = toY(tick);
+          return (
+            <g key={tick}>
+              <line x1={PAD_LEFT} y1={y} x2={CHART_W - PAD_RIGHT} y2={y} stroke="var(--border-muted)" stroke-width="1" />
+              <text x={PAD_LEFT - 4} y={y + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">{tick}</text>
+            </g>
+          );
+        })}
+        <text x={toX(minTime)} y={CHART_H - 4} text-anchor="start" font-size="10" fill="var(--text-muted)">{formatXLabel(minTime)}</text>
+        {maxTime !== minTime && (
+          <text x={toX(maxTime)} y={CHART_H - 4} text-anchor="end" font-size="10" fill="var(--text-muted)">{formatXLabel(maxTime)}</text>
+        )}
+        {Object.entries(byClass).map(([tc, pts]) => {
+          const polyPoints = pts.map(p => `${toX(p.startTime).toFixed(1)},${toY(p.rating).toFixed(1)}`).join(" ");
+          return (
+            <polyline
+              key={tc}
+              points={polyPoints}
+              fill="none"
+              stroke={SERIES_COLORS[tc] ?? "#8b949e"}
+              stroke-width="1.5"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+            />
+          );
+        })}
+        {visiblePoints.map((p, i) => {
+          const fill = p.result === "win" ? "var(--win)" : p.result === "loss" ? "var(--loss)" : "var(--draw)";
+          return (
+            <circle
+              key={i}
+              cx={toX(p.startTime).toFixed(1)}
+              cy={toY(p.rating).toFixed(1)}
+              r="3"
+              fill={fill}
+              stroke="var(--bg)"
+              stroke-width="1"
+            />
+          );
+        })}
+      </svg>
     </div>
+  );
+}
+
+function StatsSection({ stats, ratingHistory, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; state: ChessState }) {
+  const classes = stats ? TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]) : [];
+  return (
+    <>
+      {ratingHistory && ratingHistory.points.length > 0 && (
+        <RatingChart ratingHistory={ratingHistory} state={state} />
+      )}
+      {stats && (
+        <div class="stats-section">
+          <h3>Record</h3>
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>W</th>
+                <th>L</th>
+                <th>D</th>
+                <th>Win%</th>
+              </tr>
+            </thead>
+            <tbody>
+              <RecordRow label="Overall" r={stats.overall} />
+              {classes.map((tc) => (
+                <RecordRow key={tc} label={tc.charAt(0).toUpperCase() + tc.slice(1)} r={stats.byClass[tc]} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -723,7 +884,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
                 onClick={vlens.cachePartial(onSwitchTab, state, data, "games")}
               >Recent Games</button>
             </div>
-            {state.activeTab === "stats" && <StatsSection stats={data.stats} />}
+            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} state={state} />}
             {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} />}
             {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
           </>

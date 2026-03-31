@@ -1177,3 +1177,58 @@ block(`
   overflow-x: auto;
 }
 `);
+
+block(`
+.rating-chart-section {
+  margin-bottom: 16px;
+}
+`);
+
+block(`
+.rating-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+`);
+
+block(`
+.rating-chart-legend {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+`);
+
+block(`
+.rating-legend-pill {
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+`);
+
+block(`
+.rating-legend-pill.active {
+  background: rgba(255,255,255,0.05);
+  font-weight: 500;
+}
+`);
+
+block(`
+.rating-chart {
+  display: block;
+  width: 100%;
+  height: 180px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+`);

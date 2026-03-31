@@ -23,6 +23,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetGameDetail)
 	vbeam.RegisterProc(app, RequestGameAnalysis)
 	vbeam.RegisterProc(app, RequestAllGameAnalysis)
+	vbeam.RegisterProc(app, GetRatingHistory)
 }
 
 // Request/Response types
@@ -178,6 +179,17 @@ type RequestAllGameAnalysisRequest struct{}
 type RequestAllGameAnalysisResponse struct {
 	Queued int    `json:"queued"`
 	Error  string `json:"error,omitempty"`
+}
+
+type RatingPoint struct {
+	StartTime int64  `json:"startTime"`
+	Rating    int    `json:"rating"`
+	Result    string `json:"result"`
+	TimeClass string `json:"timeClass"`
+}
+
+type GetRatingHistoryResponse struct {
+	Points []RatingPoint `json:"points"`
 }
 
 // Database types
@@ -696,6 +708,38 @@ func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int) RecentGam
 		OpeningECO:     opening.ECO,
 		AnalysisStatus: analysisStatus,
 	}
+}
+
+func GetRatingHistory(ctx *vbeam.Context, req GameFilter) (resp GetRatingHistoryResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req) {
+			return true
+		}
+		rating := game.WhiteRating
+		if game.UserColor == "black" {
+			rating = game.BlackRating
+		}
+		if rating == 0 || game.StartTime == 0 {
+			return true
+		}
+		resp.Points = append(resp.Points, RatingPoint{
+			StartTime: game.StartTime,
+			Rating:    rating,
+			Result:    game.Result,
+			TimeClass: game.TimeClass,
+		})
+		return true
+	})
+	sort.Slice(resp.Points, func(i, j int) bool {
+		return resp.Points[i].StartTime < resp.Points[j].StartTime
+	})
+	return
 }
 
 func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRecentGamesResponse, err error) {
