@@ -226,6 +226,67 @@ function GameHeader({ game }: { game: RecentGameItem }) {
   );
 }
 
+type PhaseAccuracy = { white: number | null; black: number | null };
+type PhaseAccuracyData = { opening: PhaseAccuracy; middlegame: PhaseAccuracy; endgame: PhaseAccuracy };
+
+function computePhaseAccuracy(moves: MoveAnalysisItem[]): PhaseAccuracyData {
+  function avg(color: string, min: number, max: number): number | null {
+    const classified = moves.filter(
+      m => m.color === color && m.moveNumber >= min && m.moveNumber <= max && m.accuracy !== -1
+    );
+    if (classified.length === 0) return null;
+    return classified.reduce((sum, m) => sum + m.accuracy, 0) / classified.length;
+  }
+  return {
+    opening:    { white: avg("white", 1, 10),  black: avg("black", 1, 10) },
+    middlegame: { white: avg("white", 11, 30), black: avg("black", 11, 30) },
+    endgame:    { white: avg("white", 31, Infinity), black: avg("black", 31, Infinity) },
+  };
+}
+
+function PhaseAccuracyBreakdown({ moves }: { moves: MoveAnalysisItem[] }) {
+  const data = computePhaseAccuracy(moves);
+  const phases = [
+    { label: "Opening (1–10)",     data: data.opening },
+    { label: "Middlegame (11–30)", data: data.middlegame },
+    { label: "Endgame (31+)",      data: data.endgame },
+  ];
+  if (!phases.some(p => p.data.white !== null || p.data.black !== null)) return null;
+
+  return (
+    <div class="accuracy-section">
+      <h4>Phase Accuracy</h4>
+      <div class="accuracy-phases">
+        {phases.map(({ label, data: pd }) => (
+          <div class="accuracy-phase-group">
+            <div class="accuracy-phase-label">{label}</div>
+            {(["white", "black"] as const).map(color => {
+              const val = pd[color];
+              return (
+                <div class="accuracy-row">
+                  <span class="accuracy-label">{color === "white" ? "White" : "Black"}</span>
+                  <div class="accuracy-bar-track">
+                    {val !== null && (
+                      <div
+                        class={"accuracy-bar-fill " + accuracyClass(val)}
+                        style={{ width: val.toFixed(1) + "%" }}
+                      />
+                    )}
+                  </div>
+                  {val !== null
+                    ? <span class={"accuracy-value " + accuracyClass(val)}>{val.toFixed(1)}%</span>
+                    : <span class="accuracy-value accuracy-value-empty">—</span>
+                  }
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AccuracyBars({ white, black }: { white: number; black: number }) {
   return (
     <div class="accuracy-section">
@@ -433,6 +494,7 @@ function AnalysisPanel({
   return (
     <div class="analysis-panel">
       <AccuracyBars white={detail.whiteAccuracy} black={detail.blackAccuracy} />
+      {detail.moves && detail.moves.length > 0 && <PhaseAccuracyBreakdown moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <MoveQualitySummary moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <EvalGraph moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <MoveTable moves={detail.moves} />}

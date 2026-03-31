@@ -1007,6 +1007,40 @@ block(`
 .acc-poor { background-color: var(--loss); color: white; }
 `);
 
+block(`
+.accuracy-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
+`);
+
+block(`
+.accuracy-phase-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+`);
+
+block(`
+.accuracy-phase-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+`);
+
+block(`
+.accuracy-value-empty {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+`);
+
 // ── Move Table ─────────────────────────────────────────────────────────────────
 
 block(`
