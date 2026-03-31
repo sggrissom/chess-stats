@@ -1057,7 +1057,68 @@ block(`
 `);
 
 block(`
-.move-played.inaccuracy { color: var(--warning); }
+.move-blunder { color: #f85149; font-weight: 600; }
+`);
+
+block(`
+.move-mistake { color: #e07b39; }
+`);
+
+block(`
+.move-inaccuracy { color: var(--warning); }
+`);
+
+block(`
+.move-excellent { color: var(--accent); }
+`);
+
+block(`
+.move-quality-symbol { font-size: 11px; margin-left: 2px; opacity: 0.85; }
+`);
+
+block(`
+.move-quality-summary {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+`);
+
+block(`
+.quality-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+`);
+
+block(`
+.quality-table th, .quality-table td {
+  padding: 4px 16px 4px 0;
+  text-align: center;
+}
+`);
+
+block(`
+.quality-table th:first-child, .quality-table td:first-child {
+  text-align: left;
+  padding-right: 20px;
+  color: var(--text-muted);
+}
+`);
+
+block(`
+.quality-color-label { color: var(--text-muted); }
+`);
+
+block(`
+.quality-blunder-count { color: #f85149; font-weight: 600; }
+`);
+
+block(`
+.quality-mistake-count { color: #e07b39; }
+`);
+
+block(`
+.quality-inaccuracy-count { color: var(--warning); }
 `);
 
 block(`

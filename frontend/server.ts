@@ -147,6 +147,8 @@ export interface MoveAnalysisItem {
     evaluation: number
     isMate: boolean
     mateIn: number
+    accuracy: number
+    moveQuality: string
 }
 
 export interface RatingPoint {

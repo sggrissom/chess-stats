@@ -143,13 +143,15 @@ type GetGameDetailRequest struct {
 }
 
 type MoveAnalysisItem struct {
-	MoveNumber int    `json:"moveNumber"`
-	Color      string `json:"color"`
-	MovePlayed string `json:"movePlayed"` // SAN when convertible, UCI fallback
-	BestMove   string `json:"bestMove"`   // SAN when convertible, UCI fallback
-	Evaluation int    `json:"evaluation"` // centipawns, white-positive
-	IsMate     bool   `json:"isMate"`
-	MateIn     int    `json:"mateIn"`
+	MoveNumber  int     `json:"moveNumber"`
+	Color       string  `json:"color"`
+	MovePlayed  string  `json:"movePlayed"`  // SAN when convertible, UCI fallback
+	BestMove    string  `json:"bestMove"`    // SAN when convertible, UCI fallback
+	Evaluation  int     `json:"evaluation"`  // centipawns, white-positive
+	IsMate      bool    `json:"isMate"`
+	MateIn      int     `json:"mateIn"`
+	Accuracy    float64 `json:"accuracy"`    // per-move accuracy 0–100; -1 for first move (no prior position)
+	MoveQuality string  `json:"moveQuality"` // "best"|"excellent"|"good"|"inaccuracy"|"mistake"|"blunder"|""
 }
 
 type GetGameDetailResponse struct {
@@ -941,6 +943,59 @@ func RequestAllGameAnalysis(ctx *vbeam.Context, req RequestAllGameAnalysisReques
 	return
 }
 
+// normEval converts a stored evaluation (with optional mate flag) to a centipawn sentinel
+// suitable for win-probability calculations.
+func normEval(eval int, isMate bool, mateIn int) int {
+	if !isMate {
+		return eval
+	}
+	if mateIn > 0 {
+		return 10000
+	}
+	return -10000
+}
+
+// classifyMove computes the per-move accuracy and quality label for the move at index i-1,
+// given the evaluation of position i-1 (before the move) and position i (after the move).
+// color is the color of the player who made the move.
+// uciPlayed and uciBest are the UCI strings from the stored MoveAnalysis (pre-SAN conversion).
+func classifyMove(
+	prevEval, currEval int,
+	prevMate, currMate bool,
+	prevMateIn, currMateIn int,
+	color, uciPlayed, uciBest string,
+) (accuracy float64, quality string) {
+	pe := normEval(prevEval, prevMate, prevMateIn)
+	ce := normEval(currEval, currMate, currMateIn)
+
+	wpBefore := winProbability(pe)
+	wpAfter := winProbability(ce)
+
+	var wpLoss float64
+	if color == "white" {
+		wpLoss = wpBefore - wpAfter
+	} else {
+		wpLoss = wpAfter - wpBefore
+	}
+	accuracy = moveAccuracy(wpLoss)
+
+	switch {
+	case uciPlayed == uciBest:
+		quality = "best"
+	case accuracy >= 90:
+		quality = "excellent"
+	case accuracy >= 75:
+		quality = "good"
+	case accuracy >= 50:
+		quality = "inaccuracy"
+	case accuracy >= 20:
+		quality = "mistake"
+	default:
+		quality = "blunder"
+	}
+	return
+}
+
 // convertMovesToSAN maps stored MoveAnalysis (UCI notation) to MoveAnalysisItem (SAN notation).
 // Falls back to UCI strings if parsing fails.
 func convertMovesToSAN(pgn string, moves []MoveAnalysis) []MoveAnalysisItem {
@@ -966,6 +1021,7 @@ func convertMovesToSAN(pgn string, moves []MoveAnalysis) []MoveAnalysisItem {
 			Evaluation: m.Evaluation,
 			IsMate:     m.IsMate,
 			MateIn:     m.MateIn,
+			Accuracy:   -1, // first move has no prior position
 		}
 
 		// Convert MovePlayed to SAN using the stored game move at this ply
@@ -985,8 +1041,24 @@ func convertMovesToSAN(pgn string, moves []MoveAnalysis) []MoveAnalysisItem {
 			}
 		}
 
+		// Classify the move played at index i-1 (we now have both before and after evals)
+		if i > 0 {
+			prev := moves[i-1]
+			acc, qual := classifyMove(
+				prev.Evaluation, m.Evaluation,
+				prev.IsMate, m.IsMate,
+				prev.MateIn, m.MateIn,
+				prev.Color, prev.MovePlayed, prev.BestMove,
+			)
+			items[i-1].Accuracy = acc
+			items[i-1].MoveQuality = qual
+		}
+
 		items[i] = item
 	}
+	// Classify the last move (no i+1 exists; use its own eval as "after" since it's the final position)
+	// We skip classifying the last move because there's no next position to compare against.
+	// It keeps Accuracy=-1 and MoveQuality="" which the frontend treats as unclassified.
 	return items
 }
 
@@ -994,13 +1066,26 @@ func uciMoveItems(moves []MoveAnalysis) []MoveAnalysisItem {
 	items := make([]MoveAnalysisItem, len(moves))
 	for i, m := range moves {
 		items[i] = MoveAnalysisItem{
-			MoveNumber: m.MoveNumber,
-			Color:      m.Color,
-			MovePlayed: m.MovePlayed,
-			BestMove:   m.BestMove,
-			Evaluation: m.Evaluation,
-			IsMate:     m.IsMate,
-			MateIn:     m.MateIn,
+			MoveNumber:  m.MoveNumber,
+			Color:       m.Color,
+			MovePlayed:  m.MovePlayed,
+			BestMove:    m.BestMove,
+			Evaluation:  m.Evaluation,
+			IsMate:      m.IsMate,
+			MateIn:      m.MateIn,
+			Accuracy:    -1,
+			MoveQuality: "",
+		}
+		if i > 0 {
+			prev := moves[i-1]
+			acc, qual := classifyMove(
+				prev.Evaluation, m.Evaluation,
+				prev.IsMate, m.IsMate,
+				prev.MateIn, m.MateIn,
+				prev.Color, prev.MovePlayed, prev.BestMove,
+			)
+			items[i-1].Accuracy = acc
+			items[i-1].MoveQuality = qual
 		}
 	}
 	return items

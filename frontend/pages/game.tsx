@@ -136,6 +136,66 @@ function accuracyClass(acc: number): string {
   return "acc-poor";
 }
 
+function moveQualityClass(q: string): string {
+  if (q === "blunder") return "move-blunder";
+  if (q === "mistake") return "move-mistake";
+  if (q === "inaccuracy") return "move-inaccuracy";
+  if (q === "excellent") return "move-excellent";
+  return "";
+}
+
+function moveQualitySymbol(q: string): string {
+  if (q === "blunder") return "??";
+  if (q === "mistake") return "?";
+  if (q === "inaccuracy") return "?!";
+  if (q === "excellent") return "!";
+  return "";
+}
+
+function MoveQualitySummary({ moves }: { moves: MoveAnalysisItem[] }) {
+  let wb = 0, wm = 0, wi = 0;
+  let bb = 0, bm = 0, bi = 0;
+  for (const m of moves) {
+    if (m.color === "white") {
+      if (m.moveQuality === "blunder") wb++;
+      else if (m.moveQuality === "mistake") wm++;
+      else if (m.moveQuality === "inaccuracy") wi++;
+    } else {
+      if (m.moveQuality === "blunder") bb++;
+      else if (m.moveQuality === "mistake") bm++;
+      else if (m.moveQuality === "inaccuracy") bi++;
+    }
+  }
+  return (
+    <div class="move-quality-summary">
+      <table class="quality-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="quality-blunder-count">Blunders</th>
+            <th class="quality-mistake-count">Mistakes</th>
+            <th class="quality-inaccuracy-count">Inaccuracies</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="quality-color-label">White</td>
+            <td class="quality-blunder-count">{wb}</td>
+            <td class="quality-mistake-count">{wm}</td>
+            <td class="quality-inaccuracy-count">{wi}</td>
+          </tr>
+          <tr>
+            <td class="quality-color-label">Black</td>
+            <td class="quality-blunder-count">{bb}</td>
+            <td class="quality-mistake-count">{bm}</td>
+            <td class="quality-inaccuracy-count">{bi}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function GameHeader({ game }: { game: RecentGameItem }) {
   const resultLabel = game.result.charAt(0).toUpperCase() + game.result.slice(1);
   const resultCls = game.result === "win" ? "result-win" : game.result === "loss" ? "result-loss" : "result-draw";
@@ -282,22 +342,28 @@ function MoveTable({ moves }: { moves: MoveAnalysisItem[] }) {
               <td class="move-num">{row.num}</td>
               {row.white ? (
                 <>
-                  <td class={"move-played" + (row.white.movePlayed !== row.white.bestMove ? " inaccuracy" : "")}>
+                  <td class={"move-played " + moveQualityClass(row.white.moveQuality)}>
                     {row.white.movePlayed}
+                    {moveQualitySymbol(row.white.moveQuality) && (
+                      <span class="move-quality-symbol">{moveQualitySymbol(row.white.moveQuality)}</span>
+                    )}
                   </td>
                   <td class={"move-eval " + evalClass(row.white)}>{formatEval(row.white)}</td>
-                  <td class="move-best">{row.white.movePlayed !== row.white.bestMove ? row.white.bestMove : "—"}</td>
+                  <td class="move-best">{row.white.moveQuality && row.white.moveQuality !== "best" && row.white.moveQuality !== "excellent" && row.white.moveQuality !== "good" ? row.white.bestMove : "—"}</td>
                 </>
               ) : (
                 <><td /><td /><td /></>
               )}
               {row.black ? (
                 <>
-                  <td class={"move-played" + (row.black.movePlayed !== row.black.bestMove ? " inaccuracy" : "")}>
+                  <td class={"move-played " + moveQualityClass(row.black.moveQuality)}>
                     {row.black.movePlayed}
+                    {moveQualitySymbol(row.black.moveQuality) && (
+                      <span class="move-quality-symbol">{moveQualitySymbol(row.black.moveQuality)}</span>
+                    )}
                   </td>
                   <td class={"move-eval " + evalClass(row.black)}>{formatEval(row.black)}</td>
-                  <td class="move-best">{row.black.movePlayed !== row.black.bestMove ? row.black.bestMove : "—"}</td>
+                  <td class="move-best">{row.black.moveQuality && row.black.moveQuality !== "best" && row.black.moveQuality !== "excellent" && row.black.moveQuality !== "good" ? row.black.bestMove : "—"}</td>
                 </>
               ) : (
                 <><td /><td /><td /></>
@@ -367,6 +433,7 @@ function AnalysisPanel({
   return (
     <div class="analysis-panel">
       <AccuracyBars white={detail.whiteAccuracy} black={detail.blackAccuracy} />
+      {detail.moves && detail.moves.length > 0 && <MoveQualitySummary moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <EvalGraph moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <MoveTable moves={detail.moves} />}
     </div>
