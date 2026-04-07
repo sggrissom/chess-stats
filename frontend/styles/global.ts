@@ -1274,6 +1274,30 @@ block(`
 `);
 
 block(`
+.pgn-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+`);
+
+block(`
+.pgn-copy-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+`);
+
+block(`
+.pgn-copy-btn:hover { color: var(--text); border-color: var(--accent); }
+`);
+
+block(`
 .rating-chart-section {
   margin-bottom: 16px;
 }

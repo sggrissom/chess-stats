@@ -16,6 +16,7 @@ type GamePageState = {
   pollingTimer: number;
   requestingAnalysis: boolean;
   analysisError: string;
+  pgnCopied: boolean;
 };
 
 const useGamePageState = vlens.declareHook(
@@ -24,6 +25,7 @@ const useGamePageState = vlens.declareHook(
     pollingTimer: 0,
     requestingAnalysis: false,
     analysisError: "",
+    pgnCopied: false,
   })
 );
 
@@ -539,7 +541,25 @@ function GameDetailPage({
         <AnalysisPanel data={data} state={state} route={route} prefix={prefix} />
         {detail.pgn && (
           <details class="pgn-details">
-            <summary>PGN</summary>
+            <summary>
+              <span>PGN</span>
+              <button
+                class="pgn-copy-btn"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigator.clipboard.writeText(detail.pgn).then(() => {
+                    state.pgnCopied = true;
+                    vlens.scheduleRedraw();
+                    setTimeout(() => {
+                      state.pgnCopied = false;
+                      vlens.scheduleRedraw();
+                    }, 2000);
+                  });
+                }}
+              >
+                {state.pgnCopied ? "Copied!" : "Copy PGN"}
+              </button>
+            </summary>
             <pre class="pgn-text">{detail.pgn}</pre>
           </details>
         )}
