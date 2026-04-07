@@ -114,6 +114,10 @@ export interface GetWinRateTrendResponse {
     buckets: WinRateBucket[]
 }
 
+export interface GetAccuracyTrendResponse {
+    points: AccuracyPoint[]
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -167,6 +171,14 @@ export interface WinRateBucket {
     wins: number
     losses: number
     draws: number
+}
+
+export interface AccuracyPoint {
+    startTime: number
+    accuracy: number
+    rollingAvg: number
+    result: string
+    timeClass: string
 }
 
 export interface ColorRecord {
@@ -232,5 +244,9 @@ export async function GetRatingHistory(data: GameFilter): Promise<rpc.Response<G
 
 export async function GetWinRateTrend(data: GameFilter): Promise<rpc.Response<GetWinRateTrendResponse>> {
     return await rpc.call<GetWinRateTrendResponse>('GetWinRateTrend', JSON.stringify(data));
+}
+
+export async function GetAccuracyTrend(data: GameFilter): Promise<rpc.Response<GetAccuracyTrendResponse>> {
+    return await rpc.call<GetAccuracyTrendResponse>('GetAccuracyTrend', JSON.stringify(data));
 }
 

@@ -25,6 +25,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, RequestAllGameAnalysis)
 	vbeam.RegisterProc(app, GetRatingHistory)
 	vbeam.RegisterProc(app, GetWinRateTrend)
+	vbeam.RegisterProc(app, GetAccuracyTrend)
 }
 
 // Request/Response types
@@ -204,6 +205,18 @@ type WinRateBucket struct {
 
 type GetWinRateTrendResponse struct {
 	Buckets []WinRateBucket `json:"buckets"`
+}
+
+type AccuracyPoint struct {
+	StartTime  int64   `json:"startTime"`
+	Accuracy   float64 `json:"accuracy"`
+	RollingAvg float64 `json:"rollingAvg"`
+	Result     string  `json:"result"`
+	TimeClass  string  `json:"timeClass"`
+}
+
+type GetAccuracyTrendResponse struct {
+	Points []AccuracyPoint `json:"points"`
 }
 
 // Database types
@@ -1161,5 +1174,63 @@ func GetWinRateTrend(ctx *vbeam.Context, req GameFilter) (resp GetWinRateTrendRe
 	sort.Slice(resp.Buckets, func(i, j int) bool {
 		return resp.Buckets[i].PeriodStart < resp.Buckets[j].PeriodStart
 	})
+	return
+}
+
+func GetAccuracyTrend(ctx *vbeam.Context, req GameFilter) (resp GetAccuracyTrendResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+
+	var points []AccuracyPoint
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var g Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
+		if !gameMatchesFilter(&g, req) || g.StartTime == 0 {
+			return true
+		}
+		var analysis GameAnalysis
+		vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+		if analysis.Status != AnalysisStatusDone {
+			return true
+		}
+		accuracy := analysis.WhiteAccuracy
+		if g.UserColor == "black" {
+			accuracy = analysis.BlackAccuracy
+		}
+		points = append(points, AccuracyPoint{
+			StartTime: g.StartTime,
+			Accuracy:  accuracy,
+			Result:    g.Result,
+			TimeClass: g.TimeClass,
+		})
+		return true
+	})
+
+	if len(points) == 0 {
+		return
+	}
+
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].StartTime < points[j].StartTime
+	})
+
+	const windowSize = 10
+	var sum float64
+	for i := range points {
+		sum += points[i].Accuracy
+		start := i - windowSize + 1
+		if start < 0 {
+			start = 0
+		}
+		if i >= windowSize {
+			sum -= points[i-windowSize].Accuracy
+		}
+		n := i - start + 1
+		points[i].RollingAvg = sum / float64(n)
+	}
+
+	resp.Points = points
 	return
 }

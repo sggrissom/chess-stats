@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -17,6 +17,7 @@ type Data = {
   gamesTotal: number;
   ratingHistory: GetRatingHistoryResponse | null;
   winRateTrend: GetWinRateTrendResponse | null;
+  accuracyTrend: GetAccuracyTrendResponse | null;
 };
 
 type ChessState = {
@@ -78,21 +79,23 @@ function buildFilter(state: ChessState): GameFilter {
 }
 
 async function fetchStats(filter: GameFilter, data: Data) {
-  const [[s], [os], [rh], [wrt]] = await Promise.all([
+  const [[s], [os], [rh], [wrt], [at]] = await Promise.all([
     server.GetGameStats(filter),
     server.GetOpeningStats(filter),
     server.GetRatingHistory(filter),
     server.GetWinRateTrend(filter),
+    server.GetAccuracyTrend(filter),
   ]);
   data.stats = s ?? null;
   data.openingStats = os ?? null;
   data.ratingHistory = rh ?? null;
   data.winRateTrend = wrt ?? null;
+  data.accuracyTrend = at ?? null;
 }
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null, accuracyTrend: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
@@ -100,18 +103,21 @@ export async function fetch(route: string, prefix: string) {
   let openingStats: GetOpeningStatsResponse | null = null;
   let ratingHistory: GetRatingHistoryResponse | null = null;
   let winRateTrend: GetWinRateTrendResponse | null = null;
+  let accuracyTrend: GetAccuracyTrendResponse | null = null;
   if (username) {
     const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
-    const [[s], [os], [rh], [wrt]] = await Promise.all([
+    const [[s], [os], [rh], [wrt], [at]] = await Promise.all([
       server.GetGameStats(defaultFilter),
       server.GetOpeningStats(defaultFilter),
       server.GetRatingHistory(defaultFilter),
       server.GetWinRateTrend(defaultFilter),
+      server.GetAccuracyTrend(defaultFilter),
     ]);
     stats = s ?? null;
     openingStats = os ?? null;
     ratingHistory = rh ?? null;
     winRateTrend = wrt ?? null;
+    accuracyTrend = at ?? null;
   }
   return rpc.ok<Data>({
     chesscomUsername: username,
@@ -122,6 +128,7 @@ export async function fetch(route: string, prefix: string) {
     gamesTotal: 0,
     ratingHistory,
     winRateTrend,
+    accuracyTrend,
   });
 }
 
@@ -823,7 +830,83 @@ function WinRateChart({ winRateTrend }: { winRateTrend: GetWinRateTrendResponse 
   );
 }
 
-function StatsSection({ stats, ratingHistory, winRateTrend, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; state: ChessState }) {
+function AccuracyTrendChart({ accuracyTrend }: { accuracyTrend: GetAccuracyTrendResponse }) {
+  const points = accuracyTrend.points;
+  if (points.length === 0) return null;
+
+  const minTime = points[0].startTime;
+  const maxTime = points[points.length - 1].startTime;
+  const timeSpan = maxTime - minTime || 1;
+
+  function toX(ts: number): number {
+    return PAD_LEFT + ((ts - minTime) / timeSpan) * PLOT_W;
+  }
+  function toY(pct: number): number {
+    return PAD_TOP + (1 - pct / 100) * PLOT_H;
+  }
+
+  function formatXLabel(ts: number): string {
+    const d = new Date(ts * 1000);
+    if (timeSpan < 8 * 86400) {
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+    return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  }
+
+  const rollingPolyPoints = points.map(p => `${toX(p.startTime).toFixed(1)},${toY(p.rollingAvg).toFixed(1)}`).join(" ");
+
+  return (
+    <div class="rating-chart-section">
+      <div class="rating-chart-header">
+        <h3 style="margin:0">Accuracy Trend (10-game rolling avg)</h3>
+      </div>
+      <svg
+        class="rating-chart"
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {[0, 25, 50, 75, 100].map(pct => {
+          const y = toY(pct);
+          return (
+            <g key={pct}>
+              <line x1={PAD_LEFT} y1={y} x2={CHART_W - PAD_RIGHT} y2={y} stroke="var(--border-muted)" stroke-width="1" />
+              <text x={PAD_LEFT - 4} y={y + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">{pct}</text>
+            </g>
+          );
+        })}
+        <text x={toX(minTime)} y={CHART_H - 4} text-anchor="start" font-size="10" fill="var(--text-muted)">{formatXLabel(minTime)}</text>
+        {maxTime !== minTime && (
+          <text x={toX(maxTime)} y={CHART_H - 4} text-anchor="end" font-size="10" fill="var(--text-muted)">{formatXLabel(maxTime)}</text>
+        )}
+        {points.map((p, i) => {
+          const fill = p.result === "win" ? "var(--win)" : p.result === "loss" ? "var(--loss)" : "var(--draw)";
+          return (
+            <circle
+              key={i}
+              cx={toX(p.startTime).toFixed(1)}
+              cy={toY(p.accuracy).toFixed(1)}
+              r="2.5"
+              fill={fill}
+              opacity="0.5"
+              stroke="none"
+            />
+          );
+        })}
+        <polyline
+          points={rollingPolyPoints}
+          fill="none"
+          stroke="#58a6ff"
+          stroke-width="2"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; accuracyTrend: GetAccuracyTrendResponse | null; state: ChessState }) {
   const classes = stats ? TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]) : [];
   return (
     <>
@@ -832,6 +915,9 @@ function StatsSection({ stats, ratingHistory, winRateTrend, state }: { stats: Ge
       )}
       {winRateTrend && winRateTrend.buckets.length > 0 && (
         <WinRateChart winRateTrend={winRateTrend} />
+      )}
+      {accuracyTrend && accuracyTrend.points.length > 0 && (
+        <AccuracyTrendChart accuracyTrend={accuracyTrend} />
       )}
       {stats && (
         <div class="stats-section">
@@ -1001,7 +1087,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
                 onClick={vlens.cachePartial(onSwitchTab, state, data, "games")}
               >Recent Games</button>
             </div>
-            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} state={state} />}
+            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} accuracyTrend={data.accuracyTrend} state={state} />}
             {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} />}
             {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
           </>
