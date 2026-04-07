@@ -533,6 +533,9 @@ function GameDetailPage({
           <a href="#" onClick={(e) => { e.preventDefault(); core.setRoute("/dashboard"); }}>← Dashboard</a>
         </p>
         <GameHeader game={detail.game} />
+        {detail.boardSvg && (
+          <div class="board-svg" dangerouslySetInnerHTML={{ __html: detail.boardSvg }} />
+        )}
         <AnalysisPanel data={data} state={state} route={route} prefix={prefix} />
         {detail.pgn && (
           <details class="pgn-details">

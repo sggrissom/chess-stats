@@ -15,6 +15,7 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
+	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/evanw/esbuild v0.24.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect

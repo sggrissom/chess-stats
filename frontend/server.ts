@@ -79,6 +79,7 @@ export interface GetGameDetailRequest {
 export interface GetGameDetailResponse {
     game: RecentGameItem
     pgn: string
+    boardSvg: string
     analysisStatus: number
     analysisDepth: number
     whiteAccuracy: number

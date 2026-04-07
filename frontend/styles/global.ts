@@ -1327,3 +1327,18 @@ block(`
   overflow: hidden;
 }
 `);
+
+block(`
+.board-svg {
+  margin: 1rem 0;
+  max-width: 360px;
+}
+`);
+
+block(`
+.board-svg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+`);
