@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -16,6 +16,7 @@ type Data = {
   recentGames: RecentGameItem[] | null;
   gamesTotal: number;
   ratingHistory: GetRatingHistoryResponse | null;
+  winRateTrend: GetWinRateTrendResponse | null;
 };
 
 type ChessState = {
@@ -77,35 +78,40 @@ function buildFilter(state: ChessState): GameFilter {
 }
 
 async function fetchStats(filter: GameFilter, data: Data) {
-  const [[s], [os], [rh]] = await Promise.all([
+  const [[s], [os], [rh], [wrt]] = await Promise.all([
     server.GetGameStats(filter),
     server.GetOpeningStats(filter),
     server.GetRatingHistory(filter),
+    server.GetWinRateTrend(filter),
   ]);
   data.stats = s ?? null;
   data.openingStats = os ?? null;
   data.ratingHistory = rh ?? null;
+  data.winRateTrend = wrt ?? null;
 }
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
   let stats: GetGameStatsResponse | null = null;
   let openingStats: GetOpeningStatsResponse | null = null;
   let ratingHistory: GetRatingHistoryResponse | null = null;
+  let winRateTrend: GetWinRateTrendResponse | null = null;
   if (username) {
     const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
-    const [[s], [os], [rh]] = await Promise.all([
+    const [[s], [os], [rh], [wrt]] = await Promise.all([
       server.GetGameStats(defaultFilter),
       server.GetOpeningStats(defaultFilter),
       server.GetRatingHistory(defaultFilter),
+      server.GetWinRateTrend(defaultFilter),
     ]);
     stats = s ?? null;
     openingStats = os ?? null;
     ratingHistory = rh ?? null;
+    winRateTrend = wrt ?? null;
   }
   return rpc.ok<Data>({
     chesscomUsername: username,
@@ -115,6 +121,7 @@ export async function fetch(route: string, prefix: string) {
     recentGames: null,
     gamesTotal: 0,
     ratingHistory,
+    winRateTrend,
   });
 }
 
@@ -709,12 +716,122 @@ function RatingChart({ ratingHistory, state }: { ratingHistory: GetRatingHistory
   );
 }
 
-function StatsSection({ stats, ratingHistory, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; state: ChessState }) {
+const WIN_RATE_COLORS = {
+  wins: "#3fb950",
+  losses: "#f85149",
+  draws: "#8b949e",
+};
+
+function WinRateChart({ winRateTrend }: { winRateTrend: GetWinRateTrendResponse }) {
+  const buckets = winRateTrend.buckets;
+  if (buckets.length === 0) return null;
+
+  const minTime = buckets[0].periodStart;
+  const maxTime = buckets[buckets.length - 1].periodStart;
+  const timeSpan = maxTime - minTime || 1;
+
+  function toX(ts: number): number {
+    return PAD_LEFT + ((ts - minTime) / timeSpan) * PLOT_W;
+  }
+  function toY(pct: number): number {
+    return PAD_TOP + (1 - pct / 100) * PLOT_H;
+  }
+
+  function formatXLabel(ts: number): string {
+    const d = new Date(ts * 1000);
+    if (timeSpan < 8 * 86400) {
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+    return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  }
+
+  const yTicks = [0, 25, 50, 75, 100];
+
+  type SeriesKey = "wins" | "losses" | "draws";
+  const series: { key: SeriesKey; label: string; pct: (b: WinRateBucket) => number }[] = [
+    { key: "wins",   label: "Wins",   pct: b => { const t = b.wins + b.losses + b.draws; return t ? (b.wins / t) * 100 : 0; } },
+    { key: "losses", label: "Losses", pct: b => { const t = b.wins + b.losses + b.draws; return t ? (b.losses / t) * 100 : 0; } },
+    { key: "draws",  label: "Draws",  pct: b => { const t = b.wins + b.losses + b.draws; return t ? (b.draws / t) * 100 : 0; } },
+  ];
+
+  return (
+    <div class="rating-chart-section">
+      <div class="rating-chart-header">
+        <h3 style="margin:0">Win Rate Over Time</h3>
+        <div class="rating-chart-legend">
+          {series.map(s => (
+            <span
+              key={s.key}
+              class="rating-legend-pill active"
+              style={`border-color:${WIN_RATE_COLORS[s.key]};color:${WIN_RATE_COLORS[s.key]}`}
+            >
+              {s.label}
+            </span>
+          ))}
+        </div>
+      </div>
+      <svg
+        class="rating-chart"
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {yTicks.map(tick => {
+          const y = toY(tick);
+          return (
+            <g key={tick}>
+              <line x1={PAD_LEFT} y1={y} x2={CHART_W - PAD_RIGHT} y2={y} stroke="var(--border-muted)" stroke-width="1" />
+              <text x={PAD_LEFT - 4} y={y + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">{tick}%</text>
+            </g>
+          );
+        })}
+        <text x={toX(minTime)} y={CHART_H - 4} text-anchor="start" font-size="10" fill="var(--text-muted)">{formatXLabel(minTime)}</text>
+        {maxTime !== minTime && (
+          <text x={toX(maxTime)} y={CHART_H - 4} text-anchor="end" font-size="10" fill="var(--text-muted)">{formatXLabel(maxTime)}</text>
+        )}
+        {series.map(s => {
+          const polyPoints = buckets.map(b => `${toX(b.periodStart).toFixed(1)},${toY(s.pct(b)).toFixed(1)}`).join(" ");
+          return (
+            <polyline
+              key={s.key}
+              points={polyPoints}
+              fill="none"
+              stroke={WIN_RATE_COLORS[s.key]}
+              stroke-width="1.5"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+            />
+          );
+        })}
+        {buckets.map((b, i) => {
+          const t = b.wins + b.losses + b.draws;
+          const winPct = t ? (b.wins / t) * 100 : 0;
+          return (
+            <circle
+              key={i}
+              cx={toX(b.periodStart).toFixed(1)}
+              cy={toY(winPct).toFixed(1)}
+              r="3"
+              fill={WIN_RATE_COLORS.wins}
+              stroke="var(--bg)"
+              stroke-width="1"
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function StatsSection({ stats, ratingHistory, winRateTrend, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; state: ChessState }) {
   const classes = stats ? TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]) : [];
   return (
     <>
       {ratingHistory && ratingHistory.points.length > 0 && (
         <RatingChart ratingHistory={ratingHistory} state={state} />
+      )}
+      {winRateTrend && winRateTrend.buckets.length > 0 && (
+        <WinRateChart winRateTrend={winRateTrend} />
       )}
       {stats && (
         <div class="stats-section">
@@ -884,7 +1001,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
                 onClick={vlens.cachePartial(onSwitchTab, state, data, "games")}
               >Recent Games</button>
             </div>
-            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} state={state} />}
+            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} state={state} />}
             {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} />}
             {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
           </>

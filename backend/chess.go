@@ -24,6 +24,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, RequestGameAnalysis)
 	vbeam.RegisterProc(app, RequestAllGameAnalysis)
 	vbeam.RegisterProc(app, GetRatingHistory)
+	vbeam.RegisterProc(app, GetWinRateTrend)
 }
 
 // Request/Response types
@@ -192,6 +193,17 @@ type RatingPoint struct {
 
 type GetRatingHistoryResponse struct {
 	Points []RatingPoint `json:"points"`
+}
+
+type WinRateBucket struct {
+	PeriodStart int64 `json:"periodStart"`
+	Wins        int   `json:"wins"`
+	Losses      int   `json:"losses"`
+	Draws       int   `json:"draws"`
+}
+
+type GetWinRateTrendResponse struct {
+	Buckets []WinRateBucket `json:"buckets"`
 }
 
 // Database types
@@ -1089,4 +1101,65 @@ func uciMoveItems(moves []MoveAnalysis) []MoveAnalysisItem {
 		}
 	}
 	return items
+}
+
+func GetWinRateTrend(ctx *vbeam.Context, req GameFilter) (resp GetWinRateTrendResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+
+	var games []Game
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var g Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
+		if gameMatchesFilter(&g, req) && g.StartTime != 0 {
+			games = append(games, g)
+		}
+		return true
+	})
+
+	if len(games) == 0 {
+		return
+	}
+
+	sort.Slice(games, func(i, j int) bool {
+		return games[i].StartTime < games[j].StartTime
+	})
+
+	minTime := games[0].StartTime
+	maxTime := games[len(games)-1].StartTime
+	span := maxTime - minTime
+
+	var bucketDur int64
+	if span <= 90*86400 {
+		bucketDur = 7 * 86400
+	} else {
+		bucketDur = 30 * 86400
+	}
+
+	buckets := make(map[int64]*WinRateBucket)
+	for _, g := range games {
+		key := minTime + ((g.StartTime-minTime)/bucketDur)*bucketDur
+		if buckets[key] == nil {
+			buckets[key] = &WinRateBucket{PeriodStart: key}
+		}
+		b := buckets[key]
+		switch g.Result {
+		case "win":
+			b.Wins++
+		case "loss":
+			b.Losses++
+		default:
+			b.Draws++
+		}
+	}
+
+	for _, b := range buckets {
+		resp.Buckets = append(resp.Buckets, *b)
+	}
+	sort.Slice(resp.Buckets, func(i, j int) bool {
+		return resp.Buckets[i].PeriodStart < resp.Buckets[j].PeriodStart
+	})
+	return
 }
