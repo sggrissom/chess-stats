@@ -156,6 +156,27 @@ function moveQualitySymbol(q: string): string {
   return "";
 }
 
+function clampCp(m: MoveAnalysisItem): number {
+  if (m.isMate) return m.mateIn > 0 ? 1000 : -1000;
+  return Math.max(-1000, Math.min(1000, m.evaluation));
+}
+
+// Returns the 1-based ply of the move with the largest eval swing.
+// criticalPly=N → display svgs[N] (position after moves[N-1] was played).
+function computeCriticalPly(moves: MoveAnalysisItem[]): number | null {
+  if (moves.length < 2) return null;
+  let maxSwing = 0;
+  let critPly: number | null = null;
+  for (let i = 1; i < moves.length; i++) {
+    const swing = Math.abs(clampCp(moves[i]) - clampCp(moves[i - 1]));
+    if (swing > maxSwing) {
+      maxSwing = swing;
+      critPly = i + 1;
+    }
+  }
+  return critPly;
+}
+
 function MoveQualitySummary({ moves }: { moves: MoveAnalysisItem[] }) {
   let wb = 0, wm = 0, wi = 0;
   let bb = 0, bm = 0, bi = 0;
@@ -373,10 +394,12 @@ function MoveTable({
   moves,
   currentPly,
   onPlySelect,
+  criticalPly,
 }: {
   moves: MoveAnalysisItem[];
   currentPly: number;
   onPlySelect: (ply: number) => void;
+  criticalPly?: number;
 }) {
   // Group into pairs, tracking flat index (ply = index + 1)
   const rows: Array<{ num: number; white?: MoveAnalysisItem; whiteIdx: number; black?: MoveAnalysisItem; blackIdx: number }> = [];
@@ -417,7 +440,7 @@ function MoveTable({
               {row.white ? (
                 <>
                   <td
-                    class={"move-played " + moveQualityClass(row.white.moveQuality) + (currentPly === row.whiteIdx + 1 ? " move-active" : "")}
+                    class={"move-played " + moveQualityClass(row.white.moveQuality) + (currentPly === row.whiteIdx + 1 ? " move-active" : "") + (criticalPly === row.whiteIdx + 1 ? " move-critical-moment" : "")}
                     onClick={() => onPlySelect(row.whiteIdx + 1)}
                   >
                     {row.white.movePlayed}
@@ -434,7 +457,7 @@ function MoveTable({
               {row.black ? (
                 <>
                   <td
-                    class={"move-played " + moveQualityClass(row.black.moveQuality) + (currentPly === row.blackIdx + 1 ? " move-active" : "")}
+                    class={"move-played " + moveQualityClass(row.black.moveQuality) + (currentPly === row.blackIdx + 1 ? " move-active" : "") + (criticalPly === row.blackIdx + 1 ? " move-critical-moment" : "")}
                     onClick={() => onPlySelect(row.blackIdx + 1)}
                   >
                     {row.black.movePlayed}
@@ -460,10 +483,12 @@ function BoardViewer({
   svgs,
   currentPly,
   state,
+  criticalPly,
 }: {
   svgs: string[];
   currentPly: number;
   state: GamePageState;
+  criticalPly?: number;
 }) {
   const lastPly = svgs.length - 1;
   const ply = currentPly === -1 ? lastPly : currentPly;
@@ -482,6 +507,9 @@ function BoardViewer({
         <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(ply - 1)}>&lt;</button>
         <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(ply + 1)}>&gt;</button>
         <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(lastPly)}>&gt;|</button>
+        {criticalPly !== undefined && (
+          <button class="move-nav-btn move-nav-btn-critical" title="Jump to critical moment" onClick={() => setPly(criticalPly)}>⚡</button>
+        )}
       </div>
     </div>
   );
@@ -492,11 +520,13 @@ function AnalysisPanel({
   state,
   route,
   prefix,
+  criticalPly,
 }: {
   data: Data;
   state: GamePageState;
   route: string;
   prefix: string;
+  criticalPly?: number;
 }) {
   const detail = data.detail!;
   const status = detail.analysisStatus;
@@ -552,6 +582,7 @@ function AnalysisPanel({
           moves={detail.moves}
           currentPly={state.currentPly}
           onPlySelect={(ply) => { state.currentPly = ply; vlens.scheduleRedraw(); }}
+          criticalPly={criticalPly}
         />
       )}
     </div>
@@ -581,6 +612,9 @@ function GameDetailPage({
   }
 
   const { detail } = data;
+  const criticalPly = (detail.moves && detail.moves.length >= 2)
+    ? computeCriticalPly(detail.moves) ?? undefined
+    : undefined;
 
   return (
     <div class="dashboard-page">
@@ -590,9 +624,9 @@ function GameDetailPage({
         </p>
         <GameHeader game={detail.game} />
         {detail.boardSvgs && detail.boardSvgs.length > 0 && (
-          <BoardViewer svgs={detail.boardSvgs} currentPly={state.currentPly} state={state} />
+          <BoardViewer svgs={detail.boardSvgs} currentPly={state.currentPly} state={state} criticalPly={criticalPly} />
         )}
-        <AnalysisPanel data={data} state={state} route={route} prefix={prefix} />
+        <AnalysisPanel data={data} state={state} route={route} prefix={prefix} criticalPly={criticalPly} />
         {detail.pgn && (
           <details class="pgn-details">
             <summary>

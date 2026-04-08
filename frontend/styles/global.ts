@@ -1446,3 +1446,17 @@ block(`
   font-weight: 600;
 }
 `);
+
+block(`
+.move-critical-moment {
+  outline: 1px solid rgba(210, 153, 34, 0.6);
+  border-radius: 3px;
+}
+`);
+
+block(`
+.move-nav-btn-critical {
+  color: var(--warning);
+  border-color: rgba(210, 153, 34, 0.4);
+}
+`);
