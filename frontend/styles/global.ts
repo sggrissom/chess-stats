@@ -1386,6 +1386,26 @@ block(`
 `);
 
 block(`
+.opening-board-cell {
+  padding: 0.5rem 1rem;
+}
+`);
+
+block(`
+.opening-board-svg {
+  max-width: 220px;
+}
+`);
+
+block(`
+.opening-board-svg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+`);
+
+block(`
 .board-viewer {
   display: inline-block;
   margin: 1rem 0;

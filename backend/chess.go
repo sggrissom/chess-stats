@@ -86,11 +86,12 @@ func gameMatchesFilter(game *Game, f GameFilter) bool {
 }
 
 type ColorRecord struct {
-	Wins           int `json:"wins"`
-	Losses         int `json:"losses"`
-	Draws          int `json:"draws"`
-	OpeningEvalSum int `json:"openingEvalSum"` // centipawns, user perspective, summed across analyzed games
-	OpeningEvalN   int `json:"openingEvalN"`   // count of games with opening analysis
+	Wins           int    `json:"wins"`
+	Losses         int    `json:"losses"`
+	Draws          int    `json:"draws"`
+	OpeningEvalSum int    `json:"openingEvalSum"` // centipawns, user perspective, summed across analyzed games
+	OpeningEvalN   int    `json:"openingEvalN"`   // count of games with opening analysis
+	BoardSvg       string `json:"boardSvg,omitempty"`
 }
 
 type VariationRecord struct {
@@ -557,12 +558,37 @@ func openingEvalForGame(analysis *GameAnalysis, userColor string) (int, bool) {
 	return eval, true
 }
 
+// openingBoardSvg parses pgn and returns an SVG of the board at the end of the
+// opening phase (move OpeningEndMove or last available), from the given perspective.
+func openingBoardSvg(pgn string, perspective chess.Color) string {
+	pgnFn, pgnErr := chess.PGN(strings.NewReader(pgn))
+	if pgnErr != nil {
+		return ""
+	}
+	positions := chess.NewGame(pgnFn).Positions()
+	if len(positions) == 0 {
+		return ""
+	}
+	idx := min(OpeningEndMove*2, len(positions)-1)
+	var svgBuf bytes.Buffer
+	if err := chessimage.SVG(&svgBuf, positions[idx].Board(), chessimage.Perspective(perspective)); err != nil {
+		return ""
+	}
+	// The library emits width/height but no viewBox; without viewBox, CSS scaling
+	// clips rather than scales. Add viewBox so the diagram scales correctly.
+	return strings.Replace(svgBuf.String(),
+		`width="360" height="360"`,
+		`width="360" height="360" viewBox="0 0 360 360"`, 1)
+}
+
 func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsResponse, err error) {
 	user, authErr := GetAuthUser(ctx)
 	if authErr != nil || user.Id == 0 {
 		return
 	}
 	resp.ByOpening = make(map[string]OpeningRecord)
+	whiteGameId := make(map[string]string)
+	blackGameId := make(map[string]string)
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
 		var info OpeningInfo
 		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
@@ -609,9 +635,15 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 		if game.UserColor == "white" {
 			bumpColor(&rec.AsWhite)
 			bumpEval(&rec.AsWhite)
+			if _, seen := whiteGameId[info.Opening]; !seen {
+				whiteGameId[info.Opening] = gameId
+			}
 		} else {
 			bumpColor(&rec.AsBlack)
 			bumpEval(&rec.AsBlack)
+			if _, seen := blackGameId[info.Opening]; !seen {
+				blackGameId[info.Opening] = gameId
+			}
 		}
 		if info.Variation != "" {
 			vr := rec.Variations[info.Variation]
@@ -627,6 +659,23 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 		resp.ByOpening[info.Opening] = rec
 		return true
 	})
+	for openingName, rec := range resp.ByOpening {
+		if gid, ok := whiteGameId[openingName]; ok {
+			var pgn string
+			vbolt.Read(ctx.Tx, GamePgnBkt, gid, &pgn)
+			if pgn != "" {
+				rec.AsWhite.BoardSvg = openingBoardSvg(pgn, chess.White)
+			}
+		}
+		if gid, ok := blackGameId[openingName]; ok {
+			var pgn string
+			vbolt.Read(ctx.Tx, GamePgnBkt, gid, &pgn)
+			if pgn != "" {
+				rec.AsBlack.BoardSvg = openingBoardSvg(pgn, chess.Black)
+			}
+		}
+		resp.ByOpening[openingName] = rec
+	}
 	return
 }
 

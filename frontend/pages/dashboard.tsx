@@ -417,11 +417,13 @@ function OpeningColorSection({
             const variations = Object.entries(rec.variations ?? {})
               .filter(([, vr]) => totalColor(getVariationColor(vr)) > 0)
               .sort((a, b) => totalColor(getVariationColor(b[1])) - totalColor(getVariationColor(a[1])));
+            const boardSvg = getColor(rec).boardSvg;
+            const hasDetails = variations.length > 0 || !!boardSvg;
             return (
               <>
                 <tr key={name}>
                   <td>
-                    {variations.length > 0 ? (
+                    {hasDetails ? (
                       <a
                         href="#"
                         class="opening-toggle"
@@ -435,6 +437,13 @@ function OpeningColorSection({
                   </td>
                   <ColorCells r={getColor(rec)} />
                 </tr>
+                {expanded && boardSvg && (
+                  <tr key={`${name}/__board__`}>
+                    <td colspan={6} class="opening-board-cell">
+                      <div class="opening-board-svg" dangerouslySetInnerHTML={{ __html: boardSvg }} />
+                    </td>
+                  </tr>
+                )}
                 {expanded &&
                   variations.map(([varName, vr]) => (
                     <tr key={`${name}/${varName}`} class="variation-row">

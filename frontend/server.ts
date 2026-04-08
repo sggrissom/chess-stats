@@ -198,6 +198,7 @@ export interface ColorRecord {
     draws: number
     openingEvalSum: number
     openingEvalN: number
+    boardSvg: string
 }
 
 export interface VariationRecord {
