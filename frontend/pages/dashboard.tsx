@@ -390,7 +390,7 @@ function OpeningColorSection({
   const mainEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) >= threshold);
   const otherEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) < threshold);
 
-  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0, openingEvalSum: 0, openingEvalN: 0 };
+  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0, openingEvalSum: 0, openingEvalN: 0, boardSvg: "" };
   for (const [, rec] of otherEntries) {
     const c = getColor(rec);
     otherAgg.wins += c.wins;
