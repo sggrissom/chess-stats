@@ -17,6 +17,7 @@ type GamePageState = {
   requestingAnalysis: boolean;
   analysisError: string;
   pgnCopied: boolean;
+  currentPly: number;
 };
 
 const useGamePageState = vlens.declareHook(
@@ -26,6 +27,7 @@ const useGamePageState = vlens.declareHook(
     requestingAnalysis: false,
     analysisError: "",
     pgnCopied: false,
+    currentPly: -1,
   })
 );
 
@@ -367,19 +369,28 @@ function EvalGraph({ moves }: { moves: MoveAnalysisItem[] }) {
   );
 }
 
-function MoveTable({ moves }: { moves: MoveAnalysisItem[] }) {
-  // Group into pairs: white move at even index, black move at odd
-  const rows: Array<{ num: number; white?: MoveAnalysisItem; black?: MoveAnalysisItem }> = [];
+function MoveTable({
+  moves,
+  currentPly,
+  onPlySelect,
+}: {
+  moves: MoveAnalysisItem[];
+  currentPly: number;
+  onPlySelect: (ply: number) => void;
+}) {
+  // Group into pairs, tracking flat index (ply = index + 1)
+  const rows: Array<{ num: number; white?: MoveAnalysisItem; whiteIdx: number; black?: MoveAnalysisItem; blackIdx: number }> = [];
   for (let i = 0; i < moves.length; i++) {
     const m = moves[i];
     if (m.color === "white") {
-      rows.push({ num: m.moveNumber, white: m });
+      rows.push({ num: m.moveNumber, white: m, whiteIdx: i, black: undefined, blackIdx: -1 });
     } else {
       const last = rows[rows.length - 1];
       if (last && last.num === m.moveNumber && !last.black) {
         last.black = m;
+        last.blackIdx = i;
       } else {
-        rows.push({ num: m.moveNumber, black: m });
+        rows.push({ num: m.moveNumber, white: undefined, whiteIdx: -1, black: m, blackIdx: i });
       }
     }
   }
@@ -405,7 +416,10 @@ function MoveTable({ moves }: { moves: MoveAnalysisItem[] }) {
               <td class="move-num">{row.num}</td>
               {row.white ? (
                 <>
-                  <td class={"move-played " + moveQualityClass(row.white.moveQuality)}>
+                  <td
+                    class={"move-played " + moveQualityClass(row.white.moveQuality) + (currentPly === row.whiteIdx + 1 ? " move-active" : "")}
+                    onClick={() => onPlySelect(row.whiteIdx + 1)}
+                  >
                     {row.white.movePlayed}
                     {moveQualitySymbol(row.white.moveQuality) && (
                       <span class="move-quality-symbol">{moveQualitySymbol(row.white.moveQuality)}</span>
@@ -419,7 +433,10 @@ function MoveTable({ moves }: { moves: MoveAnalysisItem[] }) {
               )}
               {row.black ? (
                 <>
-                  <td class={"move-played " + moveQualityClass(row.black.moveQuality)}>
+                  <td
+                    class={"move-played " + moveQualityClass(row.black.moveQuality) + (currentPly === row.blackIdx + 1 ? " move-active" : "")}
+                    onClick={() => onPlySelect(row.blackIdx + 1)}
+                  >
                     {row.black.movePlayed}
                     {moveQualitySymbol(row.black.moveQuality) && (
                       <span class="move-quality-symbol">{moveQualitySymbol(row.black.moveQuality)}</span>
@@ -435,6 +452,37 @@ function MoveTable({ moves }: { moves: MoveAnalysisItem[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function BoardViewer({
+  svgs,
+  currentPly,
+  state,
+}: {
+  svgs: string[];
+  currentPly: number;
+  state: GamePageState;
+}) {
+  const lastPly = svgs.length - 1;
+  const ply = currentPly === -1 ? lastPly : currentPly;
+  const svg = svgs[ply] ?? "";
+
+  function setPly(p: number) {
+    state.currentPly = p;
+    vlens.scheduleRedraw();
+  }
+
+  return (
+    <div class="board-viewer">
+      <div class="board-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+      <div class="move-nav-buttons">
+        <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(0)}>|&lt;</button>
+        <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(ply - 1)}>&lt;</button>
+        <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(ply + 1)}>&gt;</button>
+        <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(lastPly)}>&gt;|</button>
+      </div>
     </div>
   );
 }
@@ -499,7 +547,13 @@ function AnalysisPanel({
       {detail.moves && detail.moves.length > 0 && <PhaseAccuracyBreakdown moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <MoveQualitySummary moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <EvalGraph moves={detail.moves} />}
-      {detail.moves && detail.moves.length > 0 && <MoveTable moves={detail.moves} />}
+      {detail.moves && detail.moves.length > 0 && (
+        <MoveTable
+          moves={detail.moves}
+          currentPly={state.currentPly}
+          onPlySelect={(ply) => { state.currentPly = ply; vlens.scheduleRedraw(); }}
+        />
+      )}
     </div>
   );
 }
@@ -535,8 +589,8 @@ function GameDetailPage({
           <a href="#" onClick={(e) => { e.preventDefault(); core.setRoute("/dashboard"); }}>← Dashboard</a>
         </p>
         <GameHeader game={detail.game} />
-        {detail.boardSvg && (
-          <div class="board-svg" dangerouslySetInnerHTML={{ __html: detail.boardSvg }} />
+        {detail.boardSvgs && detail.boardSvgs.length > 0 && (
+          <BoardViewer svgs={detail.boardSvgs} currentPly={state.currentPly} state={state} />
         )}
         <AnalysisPanel data={data} state={state} route={route} prefix={prefix} />
         {detail.pgn && (

@@ -1384,3 +1384,45 @@ block(`
   height: auto;
 }
 `);
+
+block(`
+.board-viewer {
+  display: inline-block;
+  margin: 1rem 0;
+}
+`);
+
+block(`
+.move-nav-buttons {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+`);
+
+block(`
+.move-nav-btn {
+  padding: 4px 10px;
+  font-size: 13px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+`);
+
+block(`
+.move-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+`);
+
+block(`
+.move-played.move-active {
+  background: var(--accent-muted, #2a4a6b);
+  border-radius: 3px;
+  font-weight: 600;
+}
+`);

@@ -80,6 +80,7 @@ export interface GetGameDetailResponse {
     game: RecentGameItem
     pgn: string
     boardSvg: string
+    boardSvgs: string[]
     analysisStatus: number
     analysisDepth: number
     whiteAccuracy: number

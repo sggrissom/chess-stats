@@ -172,6 +172,7 @@ type GetGameDetailResponse struct {
 	Game           RecentGameItem     `json:"game"`
 	Pgn            string             `json:"pgn"`
 	BoardSvg       string             `json:"boardSvg"`
+	BoardSvgs      []string           `json:"boardSvgs,omitempty"`
 	AnalysisStatus int                `json:"analysisStatus"`
 	AnalysisDepth  int                `json:"analysisDepth"`
 	WhiteAccuracy  float64            `json:"whiteAccuracy"`
@@ -909,14 +910,18 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 			parsedGame := chess.NewGame(pgnFn)
 			positions := parsedGame.Positions()
 			if len(positions) > 0 {
-				board := positions[len(positions)-1].Board()
 				perspective := chess.White
 				if g.UserColor == "black" {
 					perspective = chess.Black
 				}
-				var svgBuf bytes.Buffer
-				if svgErr := chessimage.SVG(&svgBuf, board, chessimage.Perspective(perspective)); svgErr == nil {
-					resp.BoardSvg = svgBuf.String()
+				for _, pos := range positions {
+					var svgBuf bytes.Buffer
+					if svgErr := chessimage.SVG(&svgBuf, pos.Board(), chessimage.Perspective(perspective)); svgErr == nil {
+						resp.BoardSvgs = append(resp.BoardSvgs, svgBuf.String())
+					}
+				}
+				if len(resp.BoardSvgs) > 0 {
+					resp.BoardSvg = resp.BoardSvgs[len(resp.BoardSvgs)-1]
 				}
 			}
 		}
