@@ -278,6 +278,21 @@ async function onSwitchTab(state: ChessState, data: Data, tab: ChessState["activ
   }
 }
 
+async function onExportPgn(state: ChessState, event: Event) {
+  event.preventDefault();
+  const [resp] = await server.ExportPgn({ filter: buildFilter(state) });
+  if (!resp || !resp.pgn) return;
+  const blob = new Blob([resp.pgn], { type: 'application/x-chess-pgn' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'games.pgn';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function onGamesPagePrev(state: ChessState, data: Data, event: Event) {
   event.preventDefault();
   if (state.gamesOffset === 0) return;
@@ -527,6 +542,12 @@ function RecentGamesSection({
   const showNext = state.gamesOffset + 50 < data.gamesTotal;
   return (
     <div class="stats-section">
+      <div class="games-section-header">
+        <span class="games-count">{data.gamesTotal} game{data.gamesTotal === 1 ? "" : "s"}</span>
+        <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onExportPgn, state)}>
+          Download PGN
+        </button>
+      </div>
       <table class="stats-table games-table">
         <thead>
           <tr>
@@ -910,13 +931,13 @@ function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, state
   const classes = stats ? TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]) : [];
   return (
     <>
-      {ratingHistory && ratingHistory.points.length > 0 && (
+      {ratingHistory && ratingHistory.points?.length > 0 && (
         <RatingChart ratingHistory={ratingHistory} state={state} />
       )}
-      {winRateTrend && winRateTrend.buckets.length > 0 && (
+      {winRateTrend && winRateTrend.buckets?.length > 0 && (
         <WinRateChart winRateTrend={winRateTrend} />
       )}
-      {accuracyTrend && accuracyTrend.points.length > 0 && (
+      {accuracyTrend && accuracyTrend.points?.length > 0 && (
         <AccuracyTrendChart accuracyTrend={accuracyTrend} />
       )}
       {stats && (

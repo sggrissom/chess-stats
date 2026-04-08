@@ -767,6 +767,24 @@ block(`
 .eval-neg { color: var(--danger); }
 `);
 
+// ── Games Section Header ───────────────────────────────────────────────────────
+
+block(`
+.games-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+`);
+
+block(`
+.games-count {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+`);
+
 // ── Pagination ─────────────────────────────────────────────────────────────────
 
 block(`

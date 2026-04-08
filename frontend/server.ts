@@ -119,6 +119,15 @@ export interface GetAccuracyTrendResponse {
     points: AccuracyPoint[]
 }
 
+export interface ExportPgnRequest {
+    filter: GameFilter
+}
+
+export interface ExportPgnResponse {
+    pgn: string
+    count: number
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -249,5 +258,9 @@ export async function GetWinRateTrend(data: GameFilter): Promise<rpc.Response<Ge
 
 export async function GetAccuracyTrend(data: GameFilter): Promise<rpc.Response<GetAccuracyTrendResponse>> {
     return await rpc.call<GetAccuracyTrendResponse>('GetAccuracyTrend', JSON.stringify(data));
+}
+
+export async function ExportPgn(data: ExportPgnRequest): Promise<rpc.Response<ExportPgnResponse>> {
+    return await rpc.call<ExportPgnResponse>('ExportPgn', JSON.stringify(data));
 }
 

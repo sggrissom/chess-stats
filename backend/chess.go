@@ -28,6 +28,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetRatingHistory)
 	vbeam.RegisterProc(app, GetWinRateTrend)
 	vbeam.RegisterProc(app, GetAccuracyTrend)
+	vbeam.RegisterProc(app, ExportPgn)
 }
 
 // Request/Response types
@@ -140,6 +141,15 @@ type GetRecentGamesRequest struct {
 type GetRecentGamesResponse struct {
 	Games []RecentGameItem `json:"games"`
 	Total int              `json:"total"`
+}
+
+type ExportPgnRequest struct {
+	Filter GameFilter `json:"filter"`
+}
+
+type ExportPgnResponse struct {
+	Pgn   string `json:"pgn"`
+	Count int    `json:"count"`
 }
 
 type GetGameDetailRequest struct {
@@ -822,6 +832,44 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 		}
 		resp.Games[i] = gameToRecentItem(g, opening, status)
 	}
+	return
+}
+
+func ExportPgn(ctx *vbeam.Context, req ExportPgnRequest) (resp ExportPgnResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+
+	var games []Game
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var g Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
+		if gameMatchesFilter(&g, req.Filter) {
+			games = append(games, g)
+		}
+		return true
+	})
+
+	sort.Slice(games, func(i, j int) bool {
+		return games[i].StartTime < games[j].StartTime
+	})
+
+	var buf strings.Builder
+	for _, g := range games {
+		var pgn string
+		vbolt.Read(ctx.Tx, GamePgnBkt, g.Id, &pgn)
+		if pgn == "" {
+			continue
+		}
+		if buf.Len() > 0 {
+			buf.WriteString("\n\n")
+		}
+		buf.WriteString(pgn)
+	}
+
+	resp.Pgn = buf.String()
+	resp.Count = len(games)
 	return
 }
 
