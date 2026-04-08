@@ -129,6 +129,10 @@ export interface ExportPgnResponse {
     count: number
 }
 
+export interface GetFrequentOpponentsResponse {
+    opponents: FrequentOpponentRecord[]
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -190,6 +194,15 @@ export interface AccuracyPoint {
     rollingAvg: number
     result: string
     timeClass: string
+}
+
+export interface FrequentOpponentRecord {
+    username: string
+    games: number
+    wins: number
+    losses: number
+    draws: number
+    avgRating: number
 }
 
 export interface ColorRecord {
@@ -264,5 +277,9 @@ export async function GetAccuracyTrend(data: GameFilter): Promise<rpc.Response<G
 
 export async function ExportPgn(data: ExportPgnRequest): Promise<rpc.Response<ExportPgnResponse>> {
     return await rpc.call<ExportPgnResponse>('ExportPgn', JSON.stringify(data));
+}
+
+export async function GetFrequentOpponents(data: GameFilter): Promise<rpc.Response<GetFrequentOpponentsResponse>> {
+    return await rpc.call<GetFrequentOpponentsResponse>('GetFrequentOpponents', JSON.stringify(data));
 }
 

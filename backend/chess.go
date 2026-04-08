@@ -29,6 +29,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetWinRateTrend)
 	vbeam.RegisterProc(app, GetAccuracyTrend)
 	vbeam.RegisterProc(app, ExportPgn)
+	vbeam.RegisterProc(app, GetFrequentOpponents)
 }
 
 // Request/Response types
@@ -520,6 +521,89 @@ func GetGameStats(ctx *vbeam.Context, req GameFilter) (resp GetGameStatsResponse
 		resp.ByClass[game.TimeClass] = tc
 		return true
 	})
+	return
+}
+
+type FrequentOpponentRecord struct {
+	Username  string `json:"username"`
+	Games     int    `json:"games"`
+	Wins      int    `json:"wins"`
+	Losses    int    `json:"losses"`
+	Draws     int    `json:"draws"`
+	AvgRating int    `json:"avgRating"`
+}
+
+type GetFrequentOpponentsResponse struct {
+	Opponents []FrequentOpponentRecord `json:"opponents"`
+}
+
+func GetFrequentOpponents(ctx *vbeam.Context, req GameFilter) (resp GetFrequentOpponentsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	type opStats struct {
+		wins, losses, draws, ratingSum, ratingN int
+	}
+	byOpponent := make(map[string]*opStats)
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req) {
+			return true
+		}
+		var opponentUsername string
+		var opponentRating int
+		if game.UserColor == "white" {
+			opponentUsername = game.BlackUsername
+			opponentRating = game.BlackRating
+		} else {
+			opponentUsername = game.WhiteUsername
+			opponentRating = game.WhiteRating
+		}
+		s := byOpponent[opponentUsername]
+		if s == nil {
+			s = &opStats{}
+			byOpponent[opponentUsername] = s
+		}
+		switch game.Result {
+		case "win":
+			s.wins++
+		case "loss":
+			s.losses++
+		default:
+			s.draws++
+		}
+		if opponentRating > 0 {
+			s.ratingSum += opponentRating
+			s.ratingN++
+		}
+		return true
+	})
+	for username, s := range byOpponent {
+		total := s.wins + s.losses + s.draws
+		if total < 2 {
+			continue
+		}
+		avgRating := 0
+		if s.ratingN > 0 {
+			avgRating = s.ratingSum / s.ratingN
+		}
+		resp.Opponents = append(resp.Opponents, FrequentOpponentRecord{
+			Username:  username,
+			Games:     total,
+			Wins:      s.wins,
+			Losses:    s.losses,
+			Draws:     s.draws,
+			AvgRating: avgRating,
+		})
+	}
+	sort.Slice(resp.Opponents, func(i, j int) bool {
+		return resp.Opponents[i].Games > resp.Opponents[j].Games
+	})
+	if len(resp.Opponents) > 50 {
+		resp.Opponents = resp.Opponents[:50]
+	}
 	return
 }
 
