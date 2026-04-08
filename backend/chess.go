@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"chess/cfg"
 	"fmt"
+	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +32,80 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetAccuracyTrend)
 	vbeam.RegisterProc(app, ExportPgn)
 	vbeam.RegisterProc(app, GetFrequentOpponents)
+	app.HandleFunc("GET /game/{id}/position/{ply}", gamePositionSvgHandler)
+}
+
+// gamePositionSvgHandler serves a raw SVG of the board at a given ply.
+// URL: /game/{id}/position/{ply}  (ply is 0-indexed; .svg suffix is accepted but stripped)
+// Query params: perspective=white|black (default white)
+// No authentication required — intended for external sharing.
+func gamePositionSvgHandler(w http.ResponseWriter, r *http.Request) {
+	gameId := r.PathValue("id")
+	plyStr := strings.TrimSuffix(r.PathValue("ply"), ".svg")
+	ply, err := strconv.Atoi(plyStr)
+	if err != nil || ply < 0 {
+		http.Error(w, "invalid ply", http.StatusBadRequest)
+		return
+	}
+
+	perspective := chess.White
+	if r.URL.Query().Get("perspective") == "black" {
+		perspective = chess.Black
+	}
+
+	type result struct {
+		svg    string
+		status int
+		msg    string
+	}
+	var res result
+	vbolt.WithReadTx(appDb, func(tx *vbolt.Tx) {
+		var g Game
+		vbolt.Read(tx, GameBkt, gameId, &g)
+		if g.Id == "" {
+			res = result{status: http.StatusNotFound, msg: "game not found"}
+			return
+		}
+
+		var pgn string
+		vbolt.Read(tx, GamePgnBkt, gameId, &pgn)
+		if pgn == "" {
+			res = result{status: http.StatusNotFound, msg: "game PGN not found"}
+			return
+		}
+
+		pgnFn, pgnErr := chess.PGN(strings.NewReader(pgn))
+		if pgnErr != nil {
+			res = result{status: http.StatusInternalServerError, msg: "failed to parse game"}
+			return
+		}
+		positions := chess.NewGame(pgnFn).Positions()
+		if ply >= len(positions) {
+			res = result{
+				status: http.StatusBadRequest,
+				msg:    fmt.Sprintf("ply %d out of range (game has %d positions)", ply, len(positions)),
+			}
+			return
+		}
+
+		var svgBuf bytes.Buffer
+		if svgErr := chessimage.SVG(&svgBuf, positions[ply].Board(), chessimage.Perspective(perspective)); svgErr != nil {
+			res = result{status: http.StatusInternalServerError, msg: "failed to render board"}
+			return
+		}
+		svg := strings.Replace(svgBuf.String(),
+			`width="360" height="360"`,
+			`width="360" height="360" viewBox="0 0 360 360"`, 1)
+		res = result{svg: svg}
+	})
+
+	if res.status != 0 {
+		http.Error(w, res.msg, res.status)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Write([]byte(res.svg))
 }
 
 // Request/Response types
