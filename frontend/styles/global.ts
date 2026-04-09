@@ -1460,3 +1460,27 @@ block(`
   border-color: rgba(210, 153, 34, 0.4);
 }
 `);
+
+block(`
+.move-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 14px;
+  min-height: 20px;
+}
+`);
+
+block(`
+.move-info-notation {
+  font-weight: 500;
+}
+`);
+
+block(`
+.move-info-eval {
+  font-size: 12px;
+  opacity: 0.85;
+}
+`);

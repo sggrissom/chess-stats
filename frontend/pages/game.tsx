@@ -484,15 +484,18 @@ function BoardViewer({
   currentPly,
   state,
   criticalPly,
+  moves,
 }: {
   svgs: string[];
   currentPly: number;
   state: GamePageState;
   criticalPly?: number;
+  moves?: MoveAnalysisItem[];
 }) {
   const lastPly = svgs.length - 1;
   const ply = currentPly === -1 ? lastPly : currentPly;
   const svg = svgs[ply] ?? "";
+  const currentMove = (moves && ply > 0) ? moves[ply - 1] : undefined;
 
   function setPly(p: number) {
     state.currentPly = p;
@@ -511,6 +514,19 @@ function BoardViewer({
           <button class="move-nav-btn move-nav-btn-critical" title="Jump to critical moment" onClick={() => setPly(criticalPly)}>⚡</button>
         )}
       </div>
+      {currentMove && (
+        <div class="move-info-bar">
+          <span class="move-info-notation">
+            {currentMove.moveNumber}{currentMove.color === "black" ? "..." : "."} {currentMove.movePlayed}
+            {moveQualitySymbol(currentMove.moveQuality) && (
+              <span class={"move-quality-symbol " + moveQualityClass(currentMove.moveQuality)}>
+                {moveQualitySymbol(currentMove.moveQuality)}
+              </span>
+            )}
+          </span>
+          <span class={"move-info-eval " + evalClass(currentMove)}>{formatEval(currentMove)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -624,7 +640,7 @@ function GameDetailPage({
         </p>
         <GameHeader game={detail.game} />
         {detail.boardSvgs && detail.boardSvgs.length > 0 && (
-          <BoardViewer svgs={detail.boardSvgs} currentPly={state.currentPly} state={state} criticalPly={criticalPly} />
+          <BoardViewer svgs={detail.boardSvgs} currentPly={state.currentPly} state={state} criticalPly={criticalPly} moves={detail.moves} />
         )}
         <AnalysisPanel data={data} state={state} route={route} prefix={prefix} criticalPly={criticalPly} />
         {detail.pgn && (
