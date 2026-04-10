@@ -125,9 +125,27 @@ export async function fetch(route: string, prefix: string) {
     accuracyTrend = at ?? null;
     frequentOpponents = fo ?? null;
   }
+  const gameCount = profile?.gameCount ?? 0;
+  if (username && gameCount < 1000) {
+    await server.SyncGames({});
+    await server.RequestAllGameAnalysis({});
+    const [updatedProfile] = await server.GetChessProfile({});
+    return rpc.ok<Data>({
+      chesscomUsername: username,
+      gameCount: updatedProfile?.gameCount ?? gameCount,
+      stats,
+      openingStats,
+      recentGames: null,
+      gamesTotal: 0,
+      ratingHistory,
+      winRateTrend,
+      accuracyTrend,
+      frequentOpponents,
+    });
+  }
   return rpc.ok<Data>({
     chesscomUsername: username,
-    gameCount: profile?.gameCount ?? 0,
+    gameCount,
     stats,
     openingStats,
     recentGames: null,
