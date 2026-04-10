@@ -143,6 +143,9 @@ type GameFilter struct {
 }
 
 func gameMatchesFilter(game *Game, f GameFilter) bool {
+	if f.TimeClass == "" && game.TimeClass == "daily" {
+		return false
+	}
 	if f.TimeClass != "" && game.TimeClass != f.TimeClass {
 		return false
 	}
