@@ -32,6 +32,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetAccuracyTrend)
 	vbeam.RegisterProc(app, ExportPgn)
 	vbeam.RegisterProc(app, GetFrequentOpponents)
+	vbeam.RegisterProc(app, GetOpeningGames)
 	app.HandleFunc("GET /game/{id}/position/{ply}", gamePositionSvgHandler)
 }
 
@@ -188,6 +189,29 @@ type OpeningRecord struct {
 
 type GetOpeningStatsResponse struct {
 	ByOpening map[string]OpeningRecord `json:"byOpening"`
+}
+
+type GetOpeningGamesRequest struct {
+	Opening   string     `json:"opening"`
+	Variation string     `json:"variation,omitempty"`
+	Color     string     `json:"color,omitempty"` // "white"|"black"|"" = both
+	Filter    GameFilter `json:"filter"`
+	Limit     int        `json:"limit"`
+	Offset    int        `json:"offset"`
+}
+
+type OpeningGamesAggregate struct {
+	Wins          int     `json:"wins"`
+	Losses        int     `json:"losses"`
+	Draws         int     `json:"draws"`
+	AvgAccuracy   float64 `json:"avgAccuracy"`
+	AccuracyCount int     `json:"accuracyCount"`
+}
+
+type GetOpeningGamesResponse struct {
+	Games     []RecentGameItem      `json:"games"`
+	Total     int                   `json:"total"`
+	Aggregate OpeningGamesAggregate `json:"aggregate"`
 }
 
 type SyncGamesResponse struct {
@@ -838,6 +862,111 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 			}
 		}
 		resp.ByOpening[openingName] = rec
+	}
+	return
+}
+
+func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOpeningGamesResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	if req.Opening == "" {
+		return
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	type gameWithOpening struct {
+		game    Game
+		opening OpeningInfo
+	}
+	var matches []gameWithOpening
+
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var info OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+		if info.Opening == "" {
+			return true
+		}
+		if alias, ok := openingAliases[info.Opening]; ok {
+			info.Opening = alias[0]
+			if info.Variation == "" {
+				info.Variation = alias[1]
+			}
+		}
+		if info.Opening != req.Opening {
+			return true
+		}
+		if req.Variation != "" && info.Variation != req.Variation {
+			return true
+		}
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req.Filter) {
+			return true
+		}
+		if req.Color != "" && game.UserColor != req.Color {
+			return true
+		}
+		matches = append(matches, gameWithOpening{game: game, opening: info})
+		return true
+	})
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].game.StartTime > matches[j].game.StartTime
+	})
+
+	resp.Total = len(matches)
+
+	var accSum float64
+	for _, m := range matches {
+		switch m.game.Result {
+		case "win":
+			resp.Aggregate.Wins++
+		case "loss":
+			resp.Aggregate.Losses++
+		default:
+			resp.Aggregate.Draws++
+		}
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, m.game.Id) {
+			var analysis GameAnalysis
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, m.game.Id, &analysis)
+			if analysis.Status == AnalysisStatusDone {
+				acc := analysis.WhiteAccuracy
+				if m.game.UserColor == "black" {
+					acc = analysis.BlackAccuracy
+				}
+				accSum += acc
+				resp.Aggregate.AccuracyCount++
+			}
+		}
+	}
+	if resp.Aggregate.AccuracyCount > 0 {
+		resp.Aggregate.AvgAccuracy = accSum / float64(resp.Aggregate.AccuracyCount)
+	}
+
+	start := req.Offset
+	if start >= len(matches) {
+		resp.Games = []RecentGameItem{}
+		return
+	}
+	end := start + limit
+	if end > len(matches) {
+		end = len(matches)
+	}
+
+	resp.Games = make([]RecentGameItem, end-start)
+	for i, m := range matches[start:end] {
+		status := AnalysisStatusNone
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, m.game.Id) {
+			var analysis GameAnalysis
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, m.game.Id, &analysis)
+			status = analysis.Status
+		}
+		resp.Games[i] = gameToRecentItem(m.game, m.opening, status)
 	}
 	return
 }

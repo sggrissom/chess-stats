@@ -1484,3 +1484,64 @@ block(`
   opacity: 0.85;
 }
 `);
+
+// ── Opening Explorer ───────────────────────────────────────────────────────────
+
+block(`
+.opening-explorer-btn {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-left: 8px;
+  opacity: 0.7;
+}
+`);
+
+block(`
+.opening-explorer-btn:hover {
+  color: var(--accent);
+  opacity: 1;
+}
+`);
+
+block(`
+.opening-explorer-panel {
+  padding: 0.75rem 1rem;
+  background: rgba(255,255,255,0.015);
+}
+`);
+
+block(`
+.opening-explorer-agg {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+`);
+
+block(`
+.opening-explorer-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 4px 0;
+}
+`);
+
+block(`
+.opening-explorer-table {
+  margin-top: 4px;
+  font-size: 13px;
+}
+`);
+
+block(`
+.opening-explorer-accuracy {
+  color: var(--text-muted);
+}
+`);
+
+block(`
+.opening-explorer-total {
+  color: var(--text-muted);
+}
+`);

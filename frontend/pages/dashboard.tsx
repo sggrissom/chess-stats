@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -37,6 +37,7 @@ type ChessState = {
   gamesLoading: boolean;
   analyzingAll: boolean;
   ratingChartSeries: Record<string, boolean>;
+  openingExplorer: Record<string, { games: RecentGameItem[]; total: number; aggregate: OpeningGamesAggregate | null; offset: number; loading: boolean }>;
 };
 
 const useChessState = vlens.declareHook(
@@ -56,6 +57,7 @@ const useChessState = vlens.declareHook(
     gamesLoading: false,
     analyzingAll: false,
     ratingChartSeries: { bullet: true, blitz: true, rapid: true, daily: true },
+    openingExplorer: {},
   })
 );
 
@@ -331,6 +333,66 @@ async function onGamesPageNext(state: ChessState, data: Data, event: Event) {
   await loadRecentGames(state, data);
 }
 
+async function loadOpeningGames(
+  state: ChessState,
+  filter: GameFilter,
+  opening: string,
+  color: string,
+  offset: number
+) {
+  const key = `${opening}|${color}`;
+  const current = state.openingExplorer[key] ?? { games: [], total: 0, aggregate: null, offset: 0, loading: false };
+  state.openingExplorer = { ...state.openingExplorer, [key]: { ...current, loading: true, offset } };
+  vlens.scheduleRedraw();
+  const [resp] = await server.GetOpeningGames({
+    opening,
+    variation: "",
+    color,
+    filter,
+    limit: 20,
+    offset,
+  });
+  state.openingExplorer = {
+    ...state.openingExplorer,
+    [key]: {
+      games: resp?.games ?? [],
+      total: resp?.total ?? 0,
+      aggregate: resp?.aggregate ?? null,
+      offset,
+      loading: false,
+    },
+  };
+  vlens.scheduleRedraw();
+}
+
+async function onToggleOpeningGames(
+  state: ChessState,
+  filter: GameFilter,
+  opening: string,
+  color: string,
+  event: Event
+) {
+  event.preventDefault();
+  const key = `${opening}|${color}`;
+  if (state.openingExplorer[key]) {
+    const next = { ...state.openingExplorer };
+    delete next[key];
+    state.openingExplorer = next;
+    vlens.scheduleRedraw();
+    return;
+  }
+  await loadOpeningGames(state, filter, opening, color, 0);
+}
+
+// Pagination wrapper that uses the composite key to stay within cachePartial's 4-arg limit.
+async function onOpeningExplorerPage(state: ChessState, filter: GameFilter, key: string, offset: number, event: Event) {
+  event.preventDefault();
+  const sep = key.lastIndexOf("|");
+  const opening = key.slice(0, sep);
+  const color = key.slice(sep + 1);
+  await loadOpeningGames(state, filter, opening, color, offset);
+}
+
 const TIME_CLASS_ORDER = ["bullet", "blitz", "rapid", "daily"];
 
 function winPct(r: { wins: number; losses: number; draws: number }): string {
@@ -398,6 +460,8 @@ function OpeningColorSection({
   getVariationColor,
   otherKey,
   state,
+  filter,
+  color,
 }: {
   title: string;
   entries: [string, OpeningRecord][];
@@ -405,6 +469,8 @@ function OpeningColorSection({
   getVariationColor: (vr: VariationRecord) => ColorRecord;
   otherKey: string;
   state: ChessState;
+  filter: GameFilter;
+  color: string;
 }) {
   const withGames = entries.filter(([, rec]) => totalColor(getColor(rec)) > 0);
   if (withGames.length === 0) return null;
@@ -459,6 +525,14 @@ function OpeningColorSection({
                     ) : (
                       name
                     )}
+                    {" "}
+                    <a
+                      href="#"
+                      class="opening-explorer-btn"
+                      onClick={vlens.cachePartial(onToggleOpeningGames, state, filter, name, color)}
+                    >
+                      {state.openingExplorer[`${name}|${color}`] ? "▲ Games" : "▼ Games"}
+                    </a>
                   </td>
                   <ColorCells r={getColor(rec)} />
                 </tr>
@@ -476,6 +550,7 @@ function OpeningColorSection({
                       <ColorCells r={getVariationColor(vr)} />
                     </tr>
                   ))}
+                <OpeningGamesPanel opening={name} color={color} state={state} filter={filter} />
               </>
             );
           })}
@@ -508,12 +583,93 @@ function OpeningColorSection({
   );
 }
 
+function OpeningGamesPanel({
+  opening,
+  color,
+  state,
+  filter,
+}: {
+  opening: string;
+  color: string;
+  state: ChessState;
+  filter: GameFilter;
+}) {
+  const key = `${opening}|${color}`;
+  const explorer = state.openingExplorer[key];
+  if (!explorer) return null;
+
+  const { games, total, aggregate, offset, loading } = explorer;
+  const showPrev = offset > 0;
+  const showNext = offset + 20 < total;
+
+  return (
+    <tr key={`${key}/__explorer__`}>
+      <td colspan={6} class="opening-explorer-panel">
+        {loading && <p class="opening-explorer-loading">Loading…</p>}
+        {!loading && aggregate && (
+          <div class="opening-explorer-agg">
+            <span class="result-win">{aggregate.wins}W</span>{" "}
+            <span class="result-loss">{aggregate.losses}L</span>{" "}
+            <span class="result-draw">{aggregate.draws}D</span>
+            {aggregate.accuracyCount > 0 && (
+              <span class="opening-explorer-accuracy"> · avg accuracy {aggregate.avgAccuracy.toFixed(1)}%</span>
+            )}
+            <span class="opening-explorer-total"> ({total} game{total === 1 ? "" : "s"})</span>
+          </div>
+        )}
+        {!loading && games.length > 0 && (
+          <table class="stats-table games-table opening-explorer-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Analysis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {games.map((g) => {
+                const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
+                const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
+                const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
+                return (
+                  <tr key={g.id} class="game-row" onClick={() => core.setRoute("/game/" + g.id)}>
+                    <td>{formatDate(g.startTime)}</td>
+                    <td>{opponent}</td>
+                    <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
+                    <td>{opponentRating}</td>
+                    <td>{analysisBadge(g.analysisStatus, 0, 0, g.userColor)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {(showPrev || showNext) && (
+          <div class="pagination">
+            <button
+              class="btn btn-secondary btn-sm"
+              disabled={!showPrev || loading}
+              onClick={vlens.cachePartial(onOpeningExplorerPage, state, filter, key, offset - 20)}
+            >← Previous</button>
+            <span class="pagination-info">{offset + 1}–{Math.min(offset + 20, total)} of {total}</span>
+            <button
+              class="btn btn-secondary btn-sm"
+              disabled={!showNext || loading}
+              onClick={vlens.cachePartial(onOpeningExplorerPage, state, filter, key, offset + 20)}
+            >Next →</button>
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 function OpeningsSection({
   openingStats,
   state,
+  filter,
 }: {
   openingStats: GetOpeningStatsResponse | null;
   state: ChessState;
+  filter: GameFilter;
 }) {
   if (!openingStats) return null;
   const entries = Object.entries(openingStats.byOpening);
@@ -528,6 +684,8 @@ function OpeningsSection({
         getVariationColor={(vr) => vr.asWhite}
         otherKey="__other_white__"
         state={state}
+        filter={filter}
+        color="white"
       />
       <OpeningColorSection
         title="Openings as Black"
@@ -536,6 +694,8 @@ function OpeningsSection({
         getVariationColor={(vr) => vr.asBlack}
         otherKey="__other_black__"
         state={state}
+        filter={filter}
+        color="black"
       />
     </>
   );
@@ -1188,7 +1348,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
               >Opponents</button>
             </div>
             {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} accuracyTrend={data.accuracyTrend} state={state} />}
-            {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} />}
+            {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} filter={buildFilter(state)} />}
             {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
             {state.activeTab === "opponents" && <FrequentOpponentsSection frequentOpponents={data.frequentOpponents} />}
           </>
