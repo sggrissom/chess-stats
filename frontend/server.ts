@@ -165,6 +165,14 @@ export interface GetStreaksResponse {
     longestDailyStreak: number
 }
 
+export interface GetMissedWinsResponse {
+    games: MissedWinGame[]
+}
+
+export interface GetSavedGamesResponse {
+    games: MissedWinGame[]
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -243,6 +251,19 @@ export interface OpeningGamesAggregate {
     draws: number
     avgAccuracy: number
     accuracyCount: number
+}
+
+export interface MissedWinGame {
+    gameId: string
+    opponent: string
+    opponentRating: number
+    userColor: string
+    result: string
+    opening: string
+    startTime: number
+    peakEval: number
+    peakEvalMove: number
+    timeClass: string
 }
 
 export interface ColorRecord {
@@ -333,5 +354,13 @@ export async function GetOpeningTrend(data: GetOpeningTrendRequest): Promise<rpc
 
 export async function GetStreaks(data: Empty): Promise<rpc.Response<GetStreaksResponse>> {
     return await rpc.call<GetStreaksResponse>('GetStreaks', JSON.stringify(data));
+}
+
+export async function GetMissedWins(data: GameFilter): Promise<rpc.Response<GetMissedWinsResponse>> {
+    return await rpc.call<GetMissedWinsResponse>('GetMissedWins', JSON.stringify(data));
+}
+
+export async function GetSavedGames(data: GameFilter): Promise<rpc.Response<GetSavedGamesResponse>> {
+    return await rpc.call<GetSavedGamesResponse>('GetSavedGames', JSON.stringify(data));
 }
 

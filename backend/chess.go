@@ -35,6 +35,8 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetOpeningGames)
 	vbeam.RegisterProc(app, GetOpeningTrend)
 	vbeam.RegisterProc(app, GetStreaks)
+	vbeam.RegisterProc(app, GetMissedWins)
+	vbeam.RegisterProc(app, GetSavedGames)
 	app.HandleFunc("GET /game/{id}/position/{ply}", gamePositionSvgHandler)
 }
 
@@ -1180,6 +1182,223 @@ func GetStreaks(ctx *vbeam.Context, _ Empty) (resp GetStreaksResponse, err error
 		}
 	}
 	resp.LongestDailyStreak = maxDaily
+	return
+}
+
+type MissedWinGame struct {
+	GameId         string `json:"gameId"`
+	Opponent       string `json:"opponent"`
+	OpponentRating int    `json:"opponentRating"`
+	UserColor      string `json:"userColor"`
+	Result         string `json:"result"`
+	Opening        string `json:"opening"`
+	StartTime      int64  `json:"startTime"`
+	PeakEval       int    `json:"peakEval"`     // centipawns from user's perspective
+	PeakEvalMove   int    `json:"peakEvalMove"` // move number where peak was reached
+	TimeClass      string `json:"timeClass"`
+}
+
+type GetMissedWinsResponse struct {
+	Games []MissedWinGame `json:"games"`
+}
+
+func GetMissedWins(ctx *vbeam.Context, req GameFilter) (resp GetMissedWinsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req) {
+			return true
+		}
+		if game.Result == "win" {
+			return true
+		}
+		if !vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
+			return true
+		}
+		var analysis GameAnalysis
+		vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+		if analysis.Status != AnalysisStatusDone {
+			return true
+		}
+
+		peakEval := 0
+		peakEvalMove := 0
+		for _, move := range analysis.Moves {
+			var userEval int
+			if move.IsMate {
+				if move.MateIn > 0 {
+					if game.UserColor == "white" {
+						userEval = 10000
+					} else {
+						userEval = -10000
+					}
+				} else {
+					if game.UserColor == "black" {
+						userEval = 10000
+					} else {
+						userEval = -10000
+					}
+				}
+			} else {
+				if game.UserColor == "white" {
+					userEval = move.Evaluation
+				} else {
+					userEval = -move.Evaluation
+				}
+			}
+			if userEval > peakEval {
+				peakEval = userEval
+				peakEvalMove = move.MoveNumber
+			}
+		}
+
+		if peakEval < 300 {
+			return true
+		}
+
+		var opponent string
+		var opponentRating int
+		if game.UserColor == "white" {
+			opponent = game.BlackUsername
+			opponentRating = game.BlackRating
+		} else {
+			opponent = game.WhiteUsername
+			opponentRating = game.WhiteRating
+		}
+
+		var info OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+
+		resp.Games = append(resp.Games, MissedWinGame{
+			GameId:         gameId,
+			Opponent:       opponent,
+			OpponentRating: opponentRating,
+			UserColor:      game.UserColor,
+			Result:         game.Result,
+			Opening:        info.Opening,
+			StartTime:      game.StartTime,
+			PeakEval:       peakEval,
+			PeakEvalMove:   peakEvalMove,
+			TimeClass:      game.TimeClass,
+		})
+		return true
+	})
+
+	sort.Slice(resp.Games, func(i, j int) bool {
+		return resp.Games[i].StartTime > resp.Games[j].StartTime
+	})
+	if len(resp.Games) > 50 {
+		resp.Games = resp.Games[:50]
+	}
+	return
+}
+
+type GetSavedGamesResponse struct {
+	Games []MissedWinGame `json:"games"`
+}
+
+// GetSavedGames returns games where the opponent had a peak advantage of ≥ +300cp
+// but the user drew or won — the mirror of GetMissedWins.
+// PeakEval is stored from the opponent's perspective (always positive).
+func GetSavedGames(ctx *vbeam.Context, req GameFilter) (resp GetSavedGamesResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req) {
+			return true
+		}
+		if game.Result == "loss" {
+			return true
+		}
+		if !vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
+			return true
+		}
+		var analysis GameAnalysis
+		vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+		if analysis.Status != AnalysisStatusDone {
+			return true
+		}
+
+		// Track peak eval from the opponent's perspective.
+		peakOppEval := 0
+		peakOppEvalMove := 0
+		for _, move := range analysis.Moves {
+			var oppEval int
+			if move.IsMate {
+				if move.MateIn > 0 {
+					// White mates — good for white, so good for opponent when user is black.
+					if game.UserColor == "black" {
+						oppEval = 10000
+					} else {
+						oppEval = -10000
+					}
+				} else {
+					// Black mates — good for black, so good for opponent when user is white.
+					if game.UserColor == "white" {
+						oppEval = 10000
+					} else {
+						oppEval = -10000
+					}
+				}
+			} else {
+				if game.UserColor == "white" {
+					oppEval = -move.Evaluation // opponent is black; negative eval favors black
+				} else {
+					oppEval = move.Evaluation // opponent is white; positive eval favors white
+				}
+			}
+			if oppEval > peakOppEval {
+				peakOppEval = oppEval
+				peakOppEvalMove = move.MoveNumber
+			}
+		}
+
+		if peakOppEval < 300 {
+			return true
+		}
+
+		var opponent string
+		var opponentRating int
+		if game.UserColor == "white" {
+			opponent = game.BlackUsername
+			opponentRating = game.BlackRating
+		} else {
+			opponent = game.WhiteUsername
+			opponentRating = game.WhiteRating
+		}
+
+		var info OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+
+		resp.Games = append(resp.Games, MissedWinGame{
+			GameId:         gameId,
+			Opponent:       opponent,
+			OpponentRating: opponentRating,
+			UserColor:      game.UserColor,
+			Result:         game.Result,
+			Opening:        info.Opening,
+			StartTime:      game.StartTime,
+			PeakEval:       peakOppEval,
+			PeakEvalMove:   peakOppEvalMove,
+			TimeClass:      game.TimeClass,
+		})
+		return true
+	})
+
+	sort.Slice(resp.Games, func(i, j int) bool {
+		return resp.Games[i].StartTime > resp.Games[j].StartTime
+	})
+	if len(resp.Games) > 50 {
+		resp.Games = resp.Games[:50]
+	}
 	return
 }
 

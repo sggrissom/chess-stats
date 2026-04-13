@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate, GetStreaksResponse, GetOpeningTrendResponse } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate, GetStreaksResponse, GetOpeningTrendResponse, MissedWinGame, GetMissedWinsResponse, GetSavedGamesResponse } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -20,6 +20,8 @@ type Data = {
   accuracyTrend: GetAccuracyTrendResponse | null;
   frequentOpponents: GetFrequentOpponentsResponse | null;
   streaks: GetStreaksResponse | null;
+  missedWins: GetMissedWinsResponse | null;
+  savedGames: GetSavedGamesResponse | null;
 };
 
 type ChessState = {
@@ -40,6 +42,7 @@ type ChessState = {
   ratingChartSeries: Record<string, boolean>;
   openingExplorer: Record<string, { games: RecentGameItem[]; total: number; aggregate: OpeningGamesAggregate | null; offset: number; loading: boolean }>;
   openingTrends: Record<string, WinRateBucket[]>;
+  expandedGameSections: Record<string, boolean>;
 };
 
 const useChessState = vlens.declareHook(
@@ -61,6 +64,7 @@ const useChessState = vlens.declareHook(
     ratingChartSeries: { bullet: true, blitz: true, rapid: true, daily: true },
     openingExplorer: {},
     openingTrends: {},
+    expandedGameSections: {},
   })
 );
 
@@ -85,13 +89,15 @@ function buildFilter(state: ChessState): GameFilter {
 }
 
 async function fetchStats(filter: GameFilter, data: Data) {
-  const [[s], [os], [rh], [wrt], [at], [fo]] = await Promise.all([
+  const [[s], [os], [rh], [wrt], [at], [fo], [mw], [sg]] = await Promise.all([
     server.GetGameStats(filter),
     server.GetOpeningStats(filter),
     server.GetRatingHistory(filter),
     server.GetWinRateTrend(filter),
     server.GetAccuracyTrend(filter),
     server.GetFrequentOpponents(filter),
+    server.GetMissedWins(filter),
+    server.GetSavedGames(filter),
   ]);
   data.stats = s ?? null;
   data.openingStats = os ?? null;
@@ -99,11 +105,13 @@ async function fetchStats(filter: GameFilter, data: Data) {
   data.winRateTrend = wrt ?? null;
   data.accuracyTrend = at ?? null;
   data.frequentOpponents = fo ?? null;
+  data.missedWins = mw ?? null;
+  data.savedGames = sg ?? null;
 }
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null, accuracyTrend: null, frequentOpponents: null, streaks: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null, accuracyTrend: null, frequentOpponents: null, streaks: null, missedWins: null, savedGames: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
@@ -114,9 +122,11 @@ export async function fetch(route: string, prefix: string) {
   let accuracyTrend: GetAccuracyTrendResponse | null = null;
   let frequentOpponents: GetFrequentOpponentsResponse | null = null;
   let streaks: GetStreaksResponse | null = null;
+  let missedWins: GetMissedWinsResponse | null = null;
+  let savedGames: GetSavedGamesResponse | null = null;
   if (username) {
     const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
-    const [[s], [os], [rh], [wrt], [at], [fo], [st]] = await Promise.all([
+    const [[s], [os], [rh], [wrt], [at], [fo], [st], [mw], [sg]] = await Promise.all([
       server.GetGameStats(defaultFilter),
       server.GetOpeningStats(defaultFilter),
       server.GetRatingHistory(defaultFilter),
@@ -124,6 +134,8 @@ export async function fetch(route: string, prefix: string) {
       server.GetAccuracyTrend(defaultFilter),
       server.GetFrequentOpponents(defaultFilter),
       server.GetStreaks({}),
+      server.GetMissedWins(defaultFilter),
+      server.GetSavedGames(defaultFilter),
     ]);
     stats = s ?? null;
     openingStats = os ?? null;
@@ -132,6 +144,8 @@ export async function fetch(route: string, prefix: string) {
     accuracyTrend = at ?? null;
     frequentOpponents = fo ?? null;
     streaks = st ?? null;
+    missedWins = mw ?? null;
+    savedGames = sg ?? null;
   }
   const gameCount = profile?.gameCount ?? 0;
   if (username && gameCount < 1000) {
@@ -150,6 +164,8 @@ export async function fetch(route: string, prefix: string) {
       accuracyTrend,
       frequentOpponents,
       streaks,
+      missedWins,
+      savedGames,
     });
   }
   return rpc.ok<Data>({
@@ -164,6 +180,8 @@ export async function fetch(route: string, prefix: string) {
     accuracyTrend,
     frequentOpponents,
     streaks,
+    missedWins,
+    savedGames,
   });
 }
 
@@ -1290,7 +1308,65 @@ function StreaksSection({ streaks }: { streaks: GetStreaksResponse | null }) {
   );
 }
 
-function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, streaks, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; accuracyTrend: GetAccuracyTrendResponse | null; streaks: GetStreaksResponse | null; state: ChessState }) {
+function toggleGameSection(state: ChessState, key: string, event: Event) {
+  event.preventDefault();
+  state.expandedGameSections = {
+    ...state.expandedGameSections,
+    [key]: !state.expandedGameSections[key],
+  };
+  vlens.scheduleRedraw();
+}
+
+function GameExtremeRow({ g, evalLabel }: { g: MissedWinGame; evalLabel: string }) {
+  const date = new Date(g.startTime * 1000).toLocaleDateString();
+  const evalDisplay = g.peakEval >= 10000 ? `+M` : `+${(g.peakEval / 100).toFixed(1)}`;
+  return (
+    <tr key={g.gameId}>
+      <td><a href={"/game/" + g.gameId}>{date}</a></td>
+      <td>{g.opponent} ({g.opponentRating})</td>
+      <td>{g.userColor}</td>
+      <td class={"result-" + g.result}>{g.result}</td>
+      <td>{g.opening || "—"}</td>
+      <td title={evalLabel}>{evalDisplay}</td>
+      <td>{g.peakEvalMove}</td>
+    </tr>
+  );
+}
+
+function GameExtremeSection({ sectionKey, title, subtitle, games, evalLabel, state }: { sectionKey: string; title: string; subtitle: string; games: MissedWinGame[]; evalLabel: string; state: ChessState }) {
+  if (!games || games.length === 0) return null;
+  const expanded = state.expandedGameSections[sectionKey];
+  return (
+    <div class="stats-section">
+      <h3 class="collapsible-header" onClick={vlens.cachePartial(toggleGameSection, state, sectionKey)}>
+        {title} ({games.length}) <span class="collapse-arrow">{expanded ? "▲" : "▼"}</span>
+      </h3>
+      {expanded && (
+        <>
+          <p class="section-subtitle">{subtitle}</p>
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Opponent</th>
+                <th>Color</th>
+                <th>Result</th>
+                <th>Opening</th>
+                <th>Peak Eval</th>
+                <th>At Move</th>
+              </tr>
+            </thead>
+            <tbody>
+              {games.map((g) => <GameExtremeRow g={g} evalLabel={evalLabel} />)}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, streaks, missedWins, savedGames, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; accuracyTrend: GetAccuracyTrendResponse | null; streaks: GetStreaksResponse | null; missedWins: GetMissedWinsResponse | null; savedGames: GetSavedGamesResponse | null; state: ChessState }) {
   const classes = stats ? TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]) : [];
   return (
     <>
@@ -1326,6 +1402,22 @@ function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, strea
           </table>
         </div>
       )}
+      <GameExtremeSection
+        sectionKey="missedWins"
+        title="Missed Wins"
+        subtitle="You had +3 or better but didn't win"
+        games={missedWins?.games ?? []}
+        evalLabel="Your peak advantage"
+        state={state}
+      />
+      <GameExtremeSection
+        sectionKey="savedGames"
+        title="Saved Games"
+        subtitle="Opponent had +3 or better but you didn't lose"
+        games={savedGames?.games ?? []}
+        evalLabel="Opponent's peak advantage"
+        state={state}
+      />
     </>
   );
 }
@@ -1476,7 +1568,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
                 onClick={vlens.cachePartial(onSwitchTab, state, data, "opponents")}
               >Opponents</button>
             </div>
-            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} accuracyTrend={data.accuracyTrend} streaks={data.streaks} state={state} />}
+            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} accuracyTrend={data.accuracyTrend} streaks={data.streaks} missedWins={data.missedWins} savedGames={data.savedGames} state={state} />}
             {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} filter={buildFilter(state)} />}
             {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
             {state.activeTab === "opponents" && <FrequentOpponentsSection frequentOpponents={data.frequentOpponents} />}
