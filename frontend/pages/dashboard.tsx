@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate, GetStreaksResponse } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -19,6 +19,7 @@ type Data = {
   winRateTrend: GetWinRateTrendResponse | null;
   accuracyTrend: GetAccuracyTrendResponse | null;
   frequentOpponents: GetFrequentOpponentsResponse | null;
+  streaks: GetStreaksResponse | null;
 };
 
 type ChessState = {
@@ -100,7 +101,7 @@ async function fetchStats(filter: GameFilter, data: Data) {
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null, accuracyTrend: null, frequentOpponents: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, recentGames: null, gamesTotal: 0, ratingHistory: null, winRateTrend: null, accuracyTrend: null, frequentOpponents: null, streaks: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
@@ -110,15 +111,17 @@ export async function fetch(route: string, prefix: string) {
   let winRateTrend: GetWinRateTrendResponse | null = null;
   let accuracyTrend: GetAccuracyTrendResponse | null = null;
   let frequentOpponents: GetFrequentOpponentsResponse | null = null;
+  let streaks: GetStreaksResponse | null = null;
   if (username) {
     const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
-    const [[s], [os], [rh], [wrt], [at], [fo]] = await Promise.all([
+    const [[s], [os], [rh], [wrt], [at], [fo], [st]] = await Promise.all([
       server.GetGameStats(defaultFilter),
       server.GetOpeningStats(defaultFilter),
       server.GetRatingHistory(defaultFilter),
       server.GetWinRateTrend(defaultFilter),
       server.GetAccuracyTrend(defaultFilter),
       server.GetFrequentOpponents(defaultFilter),
+      server.GetStreaks({}),
     ]);
     stats = s ?? null;
     openingStats = os ?? null;
@@ -126,6 +129,7 @@ export async function fetch(route: string, prefix: string) {
     winRateTrend = wrt ?? null;
     accuracyTrend = at ?? null;
     frequentOpponents = fo ?? null;
+    streaks = st ?? null;
   }
   const gameCount = profile?.gameCount ?? 0;
   if (username && gameCount < 1000) {
@@ -143,6 +147,7 @@ export async function fetch(route: string, prefix: string) {
       winRateTrend,
       accuracyTrend,
       frequentOpponents,
+      streaks,
     });
   }
   return rpc.ok<Data>({
@@ -156,6 +161,7 @@ export async function fetch(route: string, prefix: string) {
     winRateTrend,
     accuracyTrend,
     frequentOpponents,
+    streaks,
   });
 }
 
@@ -1162,10 +1168,40 @@ function FrequentOpponentsSection({ frequentOpponents }: { frequentOpponents: Ge
   );
 }
 
-function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; accuracyTrend: GetAccuracyTrendResponse | null; state: ChessState }) {
+function StreaksSection({ streaks }: { streaks: GetStreaksResponse | null }) {
+  if (!streaks) return null;
+  const { currentWinStreak, longestWinStreak, currentDailyStreak, longestDailyStreak } = streaks;
+  if (longestWinStreak === 0 && longestDailyStreak === 0) return null;
+  return (
+    <div class="stats-section streaks-section">
+      <h3>Streaks</h3>
+      <div class="streaks-grid">
+        <div class="streak-card">
+          <div class="streak-value">{currentWinStreak}</div>
+          <div class="streak-label">Current Win Streak</div>
+        </div>
+        <div class="streak-card">
+          <div class="streak-value">{longestWinStreak}</div>
+          <div class="streak-label">Longest Win Streak</div>
+        </div>
+        <div class="streak-card">
+          <div class="streak-value">{currentDailyStreak}</div>
+          <div class="streak-label">Current Daily Streak</div>
+        </div>
+        <div class="streak-card">
+          <div class="streak-value">{longestDailyStreak}</div>
+          <div class="streak-label">Longest Daily Streak</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, streaks, state }: { stats: GetGameStatsResponse | null; ratingHistory: GetRatingHistoryResponse | null; winRateTrend: GetWinRateTrendResponse | null; accuracyTrend: GetAccuracyTrendResponse | null; streaks: GetStreaksResponse | null; state: ChessState }) {
   const classes = stats ? TIME_CLASS_ORDER.filter((tc) => stats.byClass[tc]) : [];
   return (
     <>
+      <StreaksSection streaks={streaks} />
       {ratingHistory && ratingHistory.points?.length > 0 && (
         <RatingChart ratingHistory={ratingHistory} state={state} />
       )}
@@ -1347,7 +1383,7 @@ const DashboardPage = ({ name, data, state }: DashboardPageProps) => (
                 onClick={vlens.cachePartial(onSwitchTab, state, data, "opponents")}
               >Opponents</button>
             </div>
-            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} accuracyTrend={data.accuracyTrend} state={state} />}
+            {state.activeTab === "stats" && <StatsSection stats={data.stats} ratingHistory={data.ratingHistory} winRateTrend={data.winRateTrend} accuracyTrend={data.accuracyTrend} streaks={data.streaks} state={state} />}
             {state.activeTab === "openings" && <OpeningsSection openingStats={data.openingStats} state={state} filter={buildFilter(state)} />}
             {state.activeTab === "games" && <RecentGamesSection data={data} state={state} />}
             {state.activeTab === "opponents" && <FrequentOpponentsSection frequentOpponents={data.frequentOpponents} />}

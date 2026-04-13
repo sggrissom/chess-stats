@@ -1545,3 +1545,43 @@ block(`
   color: var(--text-muted);
 }
 `);
+
+// ── Streaks ────────────────────────────────────────────────────────────────────
+
+block(`
+.streaks-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+`);
+
+block(`
+.streak-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  min-width: 120px;
+  text-align: center;
+}
+`);
+
+block(`
+.streak-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+`);
+
+block(`
+.streak-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+`);

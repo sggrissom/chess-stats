@@ -33,6 +33,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, ExportPgn)
 	vbeam.RegisterProc(app, GetFrequentOpponents)
 	vbeam.RegisterProc(app, GetOpeningGames)
+	vbeam.RegisterProc(app, GetStreaks)
 	app.HandleFunc("GET /game/{id}/position/{ply}", gamePositionSvgHandler)
 }
 
@@ -968,6 +969,118 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 		}
 		resp.Games[i] = gameToRecentItem(m.game, m.opening, status)
 	}
+	return
+}
+
+type GetStreaksResponse struct {
+	CurrentWinStreak   int `json:"currentWinStreak"`
+	LongestWinStreak   int `json:"longestWinStreak"`
+	CurrentDailyStreak int `json:"currentDailyStreak"`
+	LongestDailyStreak int `json:"longestDailyStreak"`
+}
+
+func GetStreaks(ctx *vbeam.Context, _ Empty) (resp GetStreaksResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+
+	var games []Game
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, GameFilter{}) {
+			return true
+		}
+		games = append(games, game)
+		return true
+	})
+	if len(games) == 0 {
+		return
+	}
+
+	sort.Slice(games, func(i, j int) bool { return games[i].StartTime < games[j].StartTime })
+
+	// Win streaks
+	cur := 0
+	for i := len(games) - 1; i >= 0; i-- {
+		if games[i].Result == "win" {
+			cur++
+		} else {
+			break
+		}
+	}
+	resp.CurrentWinStreak = cur
+
+	longest := 0
+	run := 0
+	for _, g := range games {
+		if g.Result == "win" {
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	resp.LongestWinStreak = longest
+
+	// Daily streaks (local calendar days)
+	localMidnight := func(unix int64) time.Time {
+		t := time.Unix(unix, 0)
+		y, m, d := t.Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+	}
+	isNextDay := func(a, b time.Time) bool {
+		next := time.Date(a.Year(), a.Month(), a.Day()+1, 12, 0, 0, 0, a.Location())
+		ny, nm, nd := next.Date()
+		by, bm, bd := b.Date()
+		return ny == by && nm == bm && nd == bd
+	}
+
+	daySet := make(map[time.Time]bool)
+	for _, g := range games {
+		daySet[localMidnight(g.StartTime)] = true
+	}
+	days := make([]time.Time, 0, len(daySet))
+	for d := range daySet {
+		days = append(days, d)
+	}
+	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
+
+	now := time.Now()
+	ny, nm, nd := now.Date()
+	todayMidnight := time.Date(ny, nm, nd, 0, 0, 0, 0, now.Location())
+	lastDay := days[len(days)-1]
+	dayGap := int(todayMidnight.Sub(lastDay).Hours()) / 24
+	if dayGap > 1 {
+		resp.CurrentDailyStreak = 0
+	} else {
+		curDaily := 1
+		for i := len(days) - 1; i > 0; i-- {
+			if isNextDay(days[i-1], days[i]) {
+				curDaily++
+			} else {
+				break
+			}
+		}
+		resp.CurrentDailyStreak = curDaily
+	}
+
+	maxDaily := 1
+	runDaily := 1
+	for i := 1; i < len(days); i++ {
+		if isNextDay(days[i-1], days[i]) {
+			runDaily++
+			if runDaily > maxDaily {
+				maxDaily = runDaily
+			}
+		} else {
+			runDaily = 1
+		}
+	}
+	resp.LongestDailyStreak = maxDaily
 	return
 }
 
