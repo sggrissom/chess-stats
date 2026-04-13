@@ -4,7 +4,7 @@ import * as rpc from "vlens/rpc";
 import * as core from "vlens/core";
 import * as auth from "../lib/authCache";
 import * as server from "../server";
-import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate, GetStreaksResponse } from "../server";
+import { GetGameStatsResponse, GetOpeningStatsResponse, OpeningRecord, ColorRecord, VariationRecord, GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse, WinRateBucket, AccuracyPoint, GetAccuracyTrendResponse, GetFrequentOpponentsResponse, FrequentOpponentRecord, OpeningGamesAggregate, GetStreaksResponse, GetOpeningTrendResponse } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
 
@@ -39,6 +39,7 @@ type ChessState = {
   analyzingAll: boolean;
   ratingChartSeries: Record<string, boolean>;
   openingExplorer: Record<string, { games: RecentGameItem[]; total: number; aggregate: OpeningGamesAggregate | null; offset: number; loading: boolean }>;
+  openingTrends: Record<string, WinRateBucket[]>;
 };
 
 const useChessState = vlens.declareHook(
@@ -59,6 +60,7 @@ const useChessState = vlens.declareHook(
     analyzingAll: false,
     ratingChartSeries: { bullet: true, blitz: true, rapid: true, daily: true },
     openingExplorer: {},
+    openingTrends: {},
   })
 );
 
@@ -384,10 +386,16 @@ async function onToggleOpeningGames(
     const next = { ...state.openingExplorer };
     delete next[key];
     state.openingExplorer = next;
+    const nextTrends = { ...state.openingTrends };
+    delete nextTrends[key];
+    state.openingTrends = nextTrends;
     vlens.scheduleRedraw();
     return;
   }
   await loadOpeningGames(state, filter, opening, color, 0);
+  const [trendResp] = await server.GetOpeningTrend({ opening, color, filter });
+  state.openingTrends = { ...state.openingTrends, [key]: trendResp?.buckets ?? [] };
+  vlens.scheduleRedraw();
 }
 
 // Pagination wrapper that uses the composite key to stay within cachePartial's 4-arg limit.
@@ -589,6 +597,87 @@ function OpeningColorSection({
   );
 }
 
+const TREND_W = 500;
+const TREND_H = 120;
+const TREND_PAD_LEFT = 36;
+const TREND_PAD_RIGHT = 8;
+const TREND_PAD_TOP = 8;
+const TREND_PAD_BOTTOM = 20;
+const TREND_PLOT_W = TREND_W - TREND_PAD_LEFT - TREND_PAD_RIGHT;
+const TREND_PLOT_H = TREND_H - TREND_PAD_TOP - TREND_PAD_BOTTOM;
+
+function OpeningTrendChart({ buckets }: { buckets: WinRateBucket[] }) {
+  const minTime = buckets[0].periodStart;
+  const maxTime = buckets[buckets.length - 1].periodStart;
+  const timeSpan = maxTime - minTime || 1;
+
+  function toX(ts: number): number {
+    return TREND_PAD_LEFT + ((ts - minTime) / timeSpan) * TREND_PLOT_W;
+  }
+  function toY(pct: number): number {
+    return TREND_PAD_TOP + (1 - pct / 100) * TREND_PLOT_H;
+  }
+  function formatXLabel(ts: number): string {
+    const d = new Date(ts * 1000);
+    return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  }
+
+  const yTicks = [0, 50, 100];
+
+  return (
+    <div class="opening-trend-chart">
+      <div class="opening-trend-title">Win rate trend</div>
+      <svg
+        viewBox={`0 0 ${TREND_W} ${TREND_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        xmlns="http://www.w3.org/2000/svg"
+        style="width:100%;max-width:500px;display:block"
+      >
+        {yTicks.map(tick => {
+          const y = toY(tick);
+          return (
+            <g key={tick}>
+              <line x1={TREND_PAD_LEFT} y1={y} x2={TREND_W - TREND_PAD_RIGHT} y2={y} stroke="var(--border-muted)" stroke-width="1" />
+              <text x={TREND_PAD_LEFT - 4} y={y + 4} text-anchor="end" font-size="9" fill="var(--text-muted)">{tick}%</text>
+            </g>
+          );
+        })}
+        <text x={toX(minTime)} y={TREND_H - 4} text-anchor="start" font-size="9" fill="var(--text-muted)">{formatXLabel(minTime)}</text>
+        {maxTime !== minTime && (
+          <text x={toX(maxTime)} y={TREND_H - 4} text-anchor="end" font-size="9" fill="var(--text-muted)">{formatXLabel(maxTime)}</text>
+        )}
+        <polyline
+          points={buckets.map(b => {
+            const t = b.wins + b.losses + b.draws;
+            const pct = t ? (b.wins / t) * 100 : 0;
+            return `${toX(b.periodStart).toFixed(1)},${toY(pct).toFixed(1)}`;
+          }).join(" ")}
+          fill="none"
+          stroke={WIN_RATE_COLORS.wins}
+          stroke-width="1.5"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+        />
+        {buckets.map((b, i) => {
+          const t = b.wins + b.losses + b.draws;
+          const pct = t ? (b.wins / t) * 100 : 0;
+          return (
+            <circle
+              key={i}
+              cx={toX(b.periodStart).toFixed(1)}
+              cy={toY(pct).toFixed(1)}
+              r="3"
+              fill={WIN_RATE_COLORS.wins}
+              stroke="var(--bg)"
+              stroke-width="1"
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function OpeningGamesPanel({
   opening,
   color,
@@ -603,6 +692,7 @@ function OpeningGamesPanel({
   const key = `${opening}|${color}`;
   const explorer = state.openingExplorer[key];
   if (!explorer) return null;
+  const trendBuckets = state.openingTrends[key] ?? [];
 
   const { games, total, aggregate, offset, loading } = explorer;
   const showPrev = offset > 0;
@@ -622,6 +712,9 @@ function OpeningGamesPanel({
             )}
             <span class="opening-explorer-total"> ({total} game{total === 1 ? "" : "s"})</span>
           </div>
+        )}
+        {!loading && trendBuckets.length > 1 && (
+          <OpeningTrendChart buckets={trendBuckets} />
         )}
         {!loading && games.length > 0 && (
           <table class="stats-table games-table opening-explorer-table">

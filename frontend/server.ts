@@ -148,6 +148,16 @@ export interface GetOpeningGamesResponse {
     aggregate: OpeningGamesAggregate
 }
 
+export interface GetOpeningTrendRequest {
+    opening: string
+    color: string
+    filter: GameFilter
+}
+
+export interface GetOpeningTrendResponse {
+    buckets: WinRateBucket[]
+}
+
 export interface GetStreaksResponse {
     currentWinStreak: number
     longestWinStreak: number
@@ -315,6 +325,10 @@ export async function GetFrequentOpponents(data: GameFilter): Promise<rpc.Respon
 
 export async function GetOpeningGames(data: GetOpeningGamesRequest): Promise<rpc.Response<GetOpeningGamesResponse>> {
     return await rpc.call<GetOpeningGamesResponse>('GetOpeningGames', JSON.stringify(data));
+}
+
+export async function GetOpeningTrend(data: GetOpeningTrendRequest): Promise<rpc.Response<GetOpeningTrendResponse>> {
+    return await rpc.call<GetOpeningTrendResponse>('GetOpeningTrend', JSON.stringify(data));
 }
 
 export async function GetStreaks(data: Empty): Promise<rpc.Response<GetStreaksResponse>> {

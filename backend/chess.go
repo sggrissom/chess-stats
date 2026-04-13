@@ -33,6 +33,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, ExportPgn)
 	vbeam.RegisterProc(app, GetFrequentOpponents)
 	vbeam.RegisterProc(app, GetOpeningGames)
+	vbeam.RegisterProc(app, GetOpeningTrend)
 	vbeam.RegisterProc(app, GetStreaks)
 	app.HandleFunc("GET /game/{id}/position/{ply}", gamePositionSvgHandler)
 }
@@ -337,6 +338,16 @@ type AccuracyPoint struct {
 
 type GetAccuracyTrendResponse struct {
 	Points []AccuracyPoint `json:"points"`
+}
+
+type GetOpeningTrendRequest struct {
+	Opening string     `json:"opening"`
+	Color   string     `json:"color,omitempty"` // "white"|"black"|"" = both
+	Filter  GameFilter `json:"filter"`
+}
+
+type GetOpeningTrendResponse struct {
+	Buckets []WinRateBucket `json:"buckets"`
 }
 
 // Database types
@@ -968,6 +979,94 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 			status = analysis.Status
 		}
 		resp.Games[i] = gameToRecentItem(m.game, m.opening, status)
+	}
+	return
+}
+
+func GetOpeningTrend(ctx *vbeam.Context, req GetOpeningTrendRequest) (resp GetOpeningTrendResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	if req.Opening == "" {
+		return
+	}
+
+	var games []Game
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var info OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+		if info.Opening == "" {
+			return true
+		}
+		if alias, ok := openingAliases[info.Opening]; ok {
+			info.Opening = alias[0]
+			if info.Variation == "" {
+				info.Variation = alias[1]
+			}
+		}
+		if info.Opening != req.Opening {
+			return true
+		}
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if !gameMatchesFilter(&game, req.Filter) {
+			return true
+		}
+		if req.Color != "" && game.UserColor != req.Color {
+			return true
+		}
+		if game.StartTime != 0 {
+			games = append(games, game)
+		}
+		return true
+	})
+
+	if len(games) == 0 {
+		return
+	}
+
+	sort.Slice(games, func(i, j int) bool {
+		return games[i].StartTime < games[j].StartTime
+	})
+
+	minTime := games[0].StartTime
+	maxTime := games[len(games)-1].StartTime
+	span := maxTime - minTime
+
+	var bucketDur int64
+	if span <= 90*86400 {
+		bucketDur = 7 * 86400
+	} else {
+		bucketDur = 30 * 86400
+	}
+
+	buckets := make(map[int64]*WinRateBucket)
+	for _, g := range games {
+		key := minTime + ((g.StartTime-minTime)/bucketDur)*bucketDur
+		if buckets[key] == nil {
+			buckets[key] = &WinRateBucket{PeriodStart: key}
+		}
+		b := buckets[key]
+		switch g.Result {
+		case "win":
+			b.Wins++
+		case "loss":
+			b.Losses++
+		default:
+			b.Draws++
+		}
+	}
+
+	keys := make([]int64, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+
+	resp.Buckets = make([]WinRateBucket, len(keys))
+	for i, k := range keys {
+		resp.Buckets[i] = *buckets[k]
 	}
 	return
 }

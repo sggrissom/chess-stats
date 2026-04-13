@@ -1546,6 +1546,22 @@ block(`
 }
 `);
 
+block(`
+.opening-trend-chart {
+  margin: 8px 0 4px;
+}
+`);
+
+block(`
+.opening-trend-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+`);
+
 // ── Streaks ────────────────────────────────────────────────────────────────────
 
 block(`
