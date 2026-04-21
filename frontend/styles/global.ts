@@ -1601,3 +1601,170 @@ block(`
   margin-top: 4px;
 }
 `);
+
+// ── Dashboard Nav ──────────────────────────────────────────────────────────────
+
+block(`
+.dashboard-nav {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 24px;
+  position: sticky;
+  top: 53px;
+  z-index: 9;
+}
+`);
+
+block(`
+.nav-link {
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+`);
+
+block(`
+.nav-link:hover { color: var(--text); text-decoration: none; }
+`);
+
+block(`
+.nav-link.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+`);
+
+// ── Overview grid ──────────────────────────────────────────────────────────────
+
+block(`
+.overview-section {
+  margin-bottom: 24px;
+}
+`);
+
+block(`
+.overview-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+`);
+
+block(`
+.overview-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+`);
+
+block(`
+.overview-section-link {
+  font-size: 12px;
+  color: var(--accent);
+}
+`);
+
+block(`
+.rating-snapshot {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+`);
+
+block(`
+.rating-snapshot-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  min-width: 90px;
+  text-align: center;
+}
+`);
+
+block(`
+.rating-snapshot-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+`);
+
+block(`
+.rating-snapshot-class {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 3px;
+}
+`);
+
+// ── Mini games feed ────────────────────────────────────────────────────────────
+
+block(`
+.mini-games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+`);
+
+block(`
+.mini-game-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+`);
+
+block(`
+.mini-game-row:hover { border-color: var(--border); }
+`);
+
+block(`
+.mini-game-date { color: var(--text-muted); min-width: 90px; }
+`);
+
+block(`
+.mini-game-opponent { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+`);
+
+block(`
+.mini-game-opening { flex: 1.5; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 12px; }
+`);
+
+// ── Overview two-column layout ─────────────────────────────────────────────────
+
+block(`
+.overview-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+`);
+
+block(`
+@media (max-width: 640px) {
+  .overview-two-col { grid-template-columns: 1fr; }
+}
+`);
