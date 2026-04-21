@@ -14,6 +14,7 @@ export type OnFilterChange = (filter: GameFilter) => Promise<void>;
 export function periodToSince(period: string): number {
   const now = Date.now() / 1000;
   switch (period) {
+    case "today": { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); }
     case "7d":  return Math.floor(now - 7 * 86400);
     case "30d": return Math.floor(now - 30 * 86400);
     case "90d": return Math.floor(now - 90 * 86400);
@@ -75,6 +76,7 @@ export function FilterBar({ state, onRefetch }: { state: FilterState; onRefetch:
           onChange={vlens.cachePartial(onFilterTimePeriod, state, onRefetch)}
         >
           <option value="all">All time</option>
+          <option value="today">Today</option>
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
           <option value="90d">Last 90 days</option>
