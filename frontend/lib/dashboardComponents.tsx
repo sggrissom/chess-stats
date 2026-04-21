@@ -141,6 +141,13 @@ export async function onExportPgn(state: FilterState, event: Event) {
   URL.revokeObjectURL(url);
 }
 
+export async function onCopyPgn(state: FilterState, event: Event) {
+  event.preventDefault();
+  const [resp] = await server.ExportPgn({ filter: buildFilter(state) });
+  if (!resp || !resp.pgn) return;
+  await navigator.clipboard.writeText(resp.pgn);
+}
+
 // ─── Games pagination handlers ────────────────────────────────────────────────
 
 export async function onGamesPagePrev(state: FilterState & GamesState, data: GamesData, event: Event) {
@@ -930,6 +937,9 @@ export function RecentGamesSection({ data, state }: {
     <div class="stats-section">
       <div class="games-section-header">
         <span class="games-count">{data.gamesTotal} game{data.gamesTotal === 1 ? "" : "s"}</span>
+        <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onCopyPgn, state)}>
+          Copy PGN
+        </button>
         <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onExportPgn, state)}>
           Download PGN
         </button>
