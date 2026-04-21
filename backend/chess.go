@@ -433,6 +433,9 @@ var GamesByUserIdx = vbolt.Index[string, int](&cfg.Info, "games_by_user", vpack.
 // Current month is never marked synced so new games are always picked up.
 var SyncedMonthsBkt = vbolt.Bucket(&cfg.Info, "synced_months", vpack.StringZ, vpack.Bool)
 
+// "userId/opening/color" => board SVG string, cached during SyncGames to avoid re-parsing PGNs on every stats request
+var OpeningBoardSvgBkt = vbolt.Bucket(&cfg.Info, "chess_opening_board_svg", vpack.StringZ, vpack.String)
+
 // Procedures
 
 func SetChessUsername(ctx *vbeam.Context, req SetChessUsernameRequest) (resp SetChessUsernameResponse, err error) {
@@ -573,6 +576,7 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 		vbolt.SetTargetSingleTerm(ctx.Tx, GamesByUserIdx, pg.game.Id, user.Id)
 		if info := extractOpeningFromPGN(pg.pgn); info.ECO != "" {
 			vbolt.Write(ctx.Tx, GameOpeningBkt, pg.game.Id, &info)
+			cacheOpeningSvg(ctx.Tx, user.Id, info.Opening, pg.pgn, pg.game.UserColor)
 		}
 		added++
 	}
@@ -590,6 +594,27 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 		info := extractOpeningFromPGN(pgn)
 		if info.ECO != "" {
 			vbolt.Write(ctx.Tx, GameOpeningBkt, gameId, &info)
+		}
+		return true
+	})
+
+	// Backfill SVG cache for openings that don't have a cached board yet
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var info OpeningInfo
+		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+		if info.Opening == "" {
+			return true
+		}
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		svgKey := fmt.Sprintf("%d/%s/%s", user.Id, info.Opening, game.UserColor)
+		if vbolt.HasKey(ctx.Tx, OpeningBoardSvgBkt, svgKey) {
+			return true
+		}
+		var pgn string
+		vbolt.Read(ctx.Tx, GamePgnBkt, gameId, &pgn)
+		if pgn != "" {
+			cacheOpeningSvg(ctx.Tx, user.Id, info.Opening, pgn, game.UserColor)
 		}
 		return true
 	})
@@ -759,6 +784,21 @@ func openingEvalForGame(analysis *GameAnalysis, userColor string) (int, bool) {
 	return eval, true
 }
 
+func cacheOpeningSvg(tx *vbolt.Tx, userId int, opening, pgn, color string) {
+	key := fmt.Sprintf("%d/%s/%s", userId, opening, color)
+	if vbolt.HasKey(tx, OpeningBoardSvgBkt, key) {
+		return
+	}
+	perspective := chess.White
+	if color == "black" {
+		perspective = chess.Black
+	}
+	svg := openingBoardSvg(pgn, perspective)
+	if svg != "" {
+		vbolt.Write(tx, OpeningBoardSvgBkt, key, &svg)
+	}
+}
+
 // openingBoardSvg parses pgn and returns an SVG of the board at the end of the
 // opening phase (move OpeningEndMove or last available), from the given perspective.
 func openingBoardSvg(pgn string, perspective chess.Color) string {
@@ -788,8 +828,6 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 		return
 	}
 	resp.ByOpening = make(map[string]OpeningRecord)
-	whiteGameId := make(map[string]string)
-	blackGameId := make(map[string]string)
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
 		var info OpeningInfo
 		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
@@ -825,7 +863,9 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 			}
 		}
 		var analysis GameAnalysis
-		vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+		}
 		openingEval, hasEval := openingEvalForGame(&analysis, game.UserColor)
 		bumpEval := func(cr *ColorRecord) {
 			if hasEval {
@@ -836,15 +876,9 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 		if game.UserColor == "white" {
 			bumpColor(&rec.AsWhite)
 			bumpEval(&rec.AsWhite)
-			if _, seen := whiteGameId[info.Opening]; !seen {
-				whiteGameId[info.Opening] = gameId
-			}
 		} else {
 			bumpColor(&rec.AsBlack)
 			bumpEval(&rec.AsBlack)
-			if _, seen := blackGameId[info.Opening]; !seen {
-				blackGameId[info.Opening] = gameId
-			}
 		}
 		if info.Variation != "" {
 			vr := rec.Variations[info.Variation]
@@ -861,19 +895,13 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 		return true
 	})
 	for openingName, rec := range resp.ByOpening {
-		if gid, ok := whiteGameId[openingName]; ok {
-			var pgn string
-			vbolt.Read(ctx.Tx, GamePgnBkt, gid, &pgn)
-			if pgn != "" {
-				rec.AsWhite.BoardSvg = openingBoardSvg(pgn, chess.White)
-			}
+		whiteKey := fmt.Sprintf("%d/%s/white", user.Id, openingName)
+		blackKey := fmt.Sprintf("%d/%s/black", user.Id, openingName)
+		if vbolt.HasKey(ctx.Tx, OpeningBoardSvgBkt, whiteKey) {
+			vbolt.Read(ctx.Tx, OpeningBoardSvgBkt, whiteKey, &rec.AsWhite.BoardSvg)
 		}
-		if gid, ok := blackGameId[openingName]; ok {
-			var pgn string
-			vbolt.Read(ctx.Tx, GamePgnBkt, gid, &pgn)
-			if pgn != "" {
-				rec.AsBlack.BoardSvg = openingBoardSvg(pgn, chess.Black)
-			}
+		if vbolt.HasKey(ctx.Tx, OpeningBoardSvgBkt, blackKey) {
+			vbolt.Read(ctx.Tx, OpeningBoardSvgBkt, blackKey, &rec.AsBlack.BoardSvg)
 		}
 		resp.ByOpening[openingName] = rec
 	}
