@@ -239,6 +239,8 @@ type RecentGameItem struct {
 	Opening        string `json:"opening"`
 	OpeningECO     string `json:"openingEco"`
 	AnalysisStatus int    `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
+	WhiteAccuracy  float64 `json:"whiteAccuracy"`
+	BlackAccuracy  float64 `json:"blackAccuracy"`
 }
 
 type GetRecentGamesRequest struct {
@@ -1003,12 +1005,16 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 	resp.Games = make([]RecentGameItem, end-start)
 	for i, m := range matches[start:end] {
 		status := AnalysisStatusNone
+		whiteAccuracy := 0.0
+		blackAccuracy := 0.0
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, m.game.Id) {
 			var analysis GameAnalysis
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, m.game.Id, &analysis)
 			status = analysis.Status
+			whiteAccuracy = analysis.WhiteAccuracy
+			blackAccuracy = analysis.BlackAccuracy
 		}
-		resp.Games[i] = gameToRecentItem(m.game, m.opening, status)
+		resp.Games[i] = gameToRecentItem(m.game, m.opening, status, whiteAccuracy, blackAccuracy)
 	}
 	return
 }
@@ -1533,7 +1539,7 @@ func normalizeResult(r string) string {
 	}
 }
 
-func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int) RecentGameItem {
+func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int, whiteAccuracy float64, blackAccuracy float64) RecentGameItem {
 	return RecentGameItem{
 		Id:             g.Id,
 		WhiteUsername:  g.WhiteUsername,
@@ -1548,6 +1554,8 @@ func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int) RecentGam
 		Opening:        opening.Opening,
 		OpeningECO:     opening.ECO,
 		AnalysisStatus: analysisStatus,
+		WhiteAccuracy:  whiteAccuracy,
+		BlackAccuracy:  blackAccuracy,
 	}
 }
 
@@ -1626,12 +1634,16 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 		var opening OpeningInfo
 		vbolt.Read(ctx.Tx, GameOpeningBkt, g.Id, &opening)
 		status := AnalysisStatusNone
+		whiteAccuracy := 0.0
+		blackAccuracy := 0.0
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, g.Id) {
 			var analysis GameAnalysis
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, g.Id, &analysis)
 			status = analysis.Status
+			whiteAccuracy = analysis.WhiteAccuracy
+			blackAccuracy = analysis.BlackAccuracy
 		}
-		resp.Games[i] = gameToRecentItem(g, opening, status)
+		resp.Games[i] = gameToRecentItem(g, opening, status, whiteAccuracy, blackAccuracy)
 	}
 	return
 }
@@ -1702,7 +1714,7 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 		status = analysis.Status
 	}
 
-	resp.Game = gameToRecentItem(g, opening, status)
+	resp.Game = gameToRecentItem(g, opening, status, analysis.WhiteAccuracy, analysis.BlackAccuracy)
 	resp.Pgn = pgn
 	if pgn != "" {
 		pgnReader := strings.NewReader(pgn)

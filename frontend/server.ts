@@ -200,6 +200,8 @@ export interface RecentGameItem {
     opening: string
     openingEco: string
     analysisStatus: number
+    whiteAccuracy: number
+    blackAccuracy: number
 }
 
 export interface MoveAnalysisItem {
@@ -363,4 +365,3 @@ export async function GetMissedWins(data: GameFilter): Promise<rpc.Response<GetM
 export async function GetSavedGames(data: GameFilter): Promise<rpc.Response<GetSavedGamesResponse>> {
     return await rpc.call<GetSavedGamesResponse>('GetSavedGames', JSON.stringify(data));
 }
-
