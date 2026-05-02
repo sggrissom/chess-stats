@@ -763,7 +763,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                     <td>{opponent}</td>
                     <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
                     <td>{opponentRating}</td>
-                    <td>{analysisBadge(g.analysisStatus, 0, 0, g.userColor)}</td>
+                    <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
                   </tr>
                 );
               })}
@@ -963,7 +963,7 @@ export function RecentGamesSection({ data, state }: {
                 <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
                 <td class="opening-cell">{g.opening || "—"}</td>
                 <td>{opponentRating}</td>
-                <td>{analysisBadge(g.analysisStatus, 0, 0, g.userColor)}</td>
+                <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
               </tr>
             );
           })}
