@@ -46,7 +46,7 @@ export async function fetch(route: string, prefix: string) {
     core.setRoute("/dashboard");
     return rpc.ok<Data>({ stats: null, ratingHistory: null, winRateTrend: null, accuracyTrend: null, streaks: null, missedWins: null, savedGames: null });
   }
-  const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
+  const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0, until: 0 };
   const [[s], [rh], [wrt], [at], [st], [mw], [sg]] = await Promise.all([
     server.GetGameStats(defaultFilter),
     server.GetRatingHistory(defaultFilter),

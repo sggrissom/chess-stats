@@ -560,6 +560,39 @@ block(`
 }
 `);
 
+block(`
+.day-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 10px 0 4px;
+}
+`);
+
+block(`
+.day-nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+`);
+
+block(`
+.day-nav a:hover {
+  color: var(--accent);
+}
+`);
+
+block(`
+.day-nav-label {
+  font-weight: 600;
+  min-width: 160px;
+  text-align: center;
+  font-size: 15px;
+}
+`);
+
 // ── Tabs ───────────────────────────────────────────────────────────────────────
 
 block(`

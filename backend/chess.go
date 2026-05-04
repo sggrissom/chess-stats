@@ -145,6 +145,7 @@ type GameFilter struct {
 	MinOpponentRating int    `json:"minOpponentRating,omitempty"`
 	MaxOpponentRating int    `json:"maxOpponentRating,omitempty"`
 	Since             int64  `json:"since,omitempty"` // unix timestamp; 0 = no filter
+	Until             int64  `json:"until,omitempty"` // exclusive upper bound; 0 = no filter
 }
 
 func gameMatchesFilter(game *Game, f GameFilter) bool {
@@ -155,6 +156,9 @@ func gameMatchesFilter(game *Game, f GameFilter) bool {
 		return false
 	}
 	if f.Since != 0 && game.StartTime < f.Since {
+		return false
+	}
+	if f.Until != 0 && game.StartTime >= f.Until {
 		return false
 	}
 	opponentRating := game.BlackRating

@@ -50,6 +50,7 @@ export interface GameFilter {
     minOpponentRating: number
     maxOpponentRating: number
     since: number
+    until: number
 }
 
 export interface GetGameStatsResponse {

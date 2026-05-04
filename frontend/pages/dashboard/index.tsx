@@ -296,8 +296,9 @@ export async function fetch(route: string, prefix: string) {
       minOpponentRating: 0,
       maxOpponentRating: 0,
       since: Math.floor(Date.now() / 1000 - 30 * 86400),
+      until: 0,
     };
-    const allTimeFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
+    const allTimeFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0, until: 0 };
     const [[s], [os], [rh], [st], [gamesResp]] = await Promise.all([
       server.GetGameStats(thirtyDayFilter),
       server.GetOpeningStats(allTimeFilter),

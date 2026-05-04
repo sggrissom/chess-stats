@@ -37,7 +37,7 @@ export async function fetch(route: string, prefix: string) {
     core.setRoute("/dashboard");
     return rpc.ok<Data>({ frequentOpponents: null });
   }
-  const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0 };
+  const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0, until: 0 };
   const [fo] = await server.GetFrequentOpponents(defaultFilter);
   const data: Data = { frequentOpponents: fo ?? null };
   _data = data;

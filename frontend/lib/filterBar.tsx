@@ -29,6 +29,7 @@ export function buildFilter(state: FilterState): GameFilter {
     minOpponentRating: parseInt(state.filterMinRating) || 0,
     maxOpponentRating: parseInt(state.filterMaxRating) || 0,
     since: periodToSince(state.filterTimePeriod),
+    until: 0,
   };
 }
 
@@ -54,7 +55,7 @@ async function onApplyRatingFilter(state: FilterState, onRefetch: OnFilterChange
   vlens.scheduleRedraw();
 }
 
-export function FilterBar({ state, onRefetch }: { state: FilterState; onRefetch: OnFilterChange }) {
+export function FilterBar({ state, onRefetch, hidePeriod }: { state: FilterState; onRefetch: OnFilterChange; hidePeriod?: boolean }) {
   const timeClasses = ["", ...TIME_CLASS_ORDER];
   const timeClassLabels: Record<string, string> = { "": "All", bullet: "Bullet", blitz: "Blitz", rapid: "Rapid", daily: "Daily" };
   return (
@@ -70,19 +71,21 @@ export function FilterBar({ state, onRefetch }: { state: FilterState; onRefetch:
           </button>
         ))}
       </div>
-      <div class="filter-row">
-        <select
-          value={state.filterTimePeriod}
-          onChange={vlens.cachePartial(onFilterTimePeriod, state, onRefetch)}
-        >
-          <option value="all">All time</option>
-          <option value="today">Today</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-          <option value="1y">Last year</option>
-        </select>
-      </div>
+      {!hidePeriod && (
+        <div class="filter-row">
+          <select
+            value={state.filterTimePeriod}
+            onChange={vlens.cachePartial(onFilterTimePeriod, state, onRefetch)}
+          >
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+            <option value="1y">Last year</option>
+          </select>
+        </div>
+      )}
       <form class="filter-row" onSubmit={vlens.cachePartial(onApplyRatingFilter, state, onRefetch)}>
         <label>Opponent rating:</label>
         <input

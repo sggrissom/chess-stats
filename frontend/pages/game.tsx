@@ -6,6 +6,7 @@ import * as server from "../server";
 import { GetGameDetailResponse, MoveAnalysisItem, RecentGameItem } from "../server";
 import { requireAuthInView, ensureAuthInFetch } from "../lib/authHelpers";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "../lib/analysisStatus";
+import { lastGamesRoute } from "./dashboard/games";
 
 type Data = {
   detail: GetGameDetailResponse | null;
@@ -627,7 +628,7 @@ function GameDetailPage({
     return (
       <div class="dashboard-page">
         <div class="dashboard-content">
-          <p><a href="#" onClick={(e) => { e.preventDefault(); core.setRoute("/dashboard"); }}>← Dashboard</a></p>
+          <p><a href="#" onClick={(e) => { e.preventDefault(); core.setRoute(lastGamesRoute); }}>← Games</a></p>
           <p>Game not found.</p>
         </div>
       </div>
@@ -643,7 +644,7 @@ function GameDetailPage({
     <div class="dashboard-page">
       <div class="dashboard-content">
         <p class="back-link">
-          <a href="#" onClick={(e) => { e.preventDefault(); core.setRoute("/dashboard"); }}>← Dashboard</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); core.setRoute(lastGamesRoute); }}>← Games</a>
         </p>
         <GameHeader game={detail.game} />
         {detail.boardSvgs && detail.boardSvgs.length > 0 && (

@@ -29,6 +29,8 @@ export interface OpeningsState {
 export interface GamesState {
   gamesOffset: number;
   gamesLoading: boolean;
+  gamesSince: number;
+  gamesUntil: number;
 }
 
 export interface StatsData {
@@ -84,8 +86,11 @@ export async function fetchStatsData(filter: GameFilter, data: StatsData) {
 export async function loadRecentGames(state: FilterState & GamesState, data: GamesData) {
   state.gamesLoading = true;
   vlens.scheduleRedraw();
+  const filter = buildFilter(state);
+  if (state.gamesSince) filter.since = state.gamesSince;
+  if (state.gamesUntil) filter.until = state.gamesUntil;
   const [resp] = await server.GetRecentGames({
-    filter: buildFilter(state),
+    filter,
     limit: 50,
     offset: state.gamesOffset,
   });
