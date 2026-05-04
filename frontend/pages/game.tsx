@@ -134,6 +134,12 @@ function evalClass(move: MoveAnalysisItem): string {
   return "eval-neutral";
 }
 
+
+function displayedEvalForMove(moves: MoveAnalysisItem[], moveIdx: number): MoveAnalysisItem {
+  const next = moves[moveIdx + 1];
+  return next ?? moves[moveIdx];
+}
+
 function accuracyClass(acc: number): string {
   if (acc >= 90) return "acc-great";
   if (acc >= 70) return "acc-good";
@@ -448,7 +454,7 @@ function MoveTable({
                       <span class="move-quality-symbol">{moveQualitySymbol(row.white.moveQuality)}</span>
                     )}
                   </td>
-                  <td class={"move-eval " + evalClass(row.white)}>{formatEval(row.white)}</td>
+                  <td class={"move-eval " + evalClass(displayedEvalForMove(moves, row.whiteIdx))}>{formatEval(displayedEvalForMove(moves, row.whiteIdx))}</td>
                   <td class="move-best">{row.white.moveQuality && row.white.moveQuality !== "best" && row.white.moveQuality !== "excellent" && row.white.moveQuality !== "good" ? row.white.bestMove : "—"}</td>
                 </>
               ) : (
@@ -465,7 +471,7 @@ function MoveTable({
                       <span class="move-quality-symbol">{moveQualitySymbol(row.black.moveQuality)}</span>
                     )}
                   </td>
-                  <td class={"move-eval " + evalClass(row.black)}>{formatEval(row.black)}</td>
+                  <td class={"move-eval " + evalClass(displayedEvalForMove(moves, row.blackIdx))}>{formatEval(displayedEvalForMove(moves, row.blackIdx))}</td>
                   <td class="move-best">{row.black.moveQuality && row.black.moveQuality !== "best" && row.black.moveQuality !== "excellent" && row.black.moveQuality !== "good" ? row.black.bestMove : "—"}</td>
                 </>
               ) : (
@@ -496,6 +502,7 @@ function BoardViewer({
   const ply = currentPly === -1 ? lastPly : currentPly;
   const svg = svgs[ply] ?? "";
   const currentMove = (moves && ply > 0) ? moves[ply - 1] : undefined;
+  const currentMoveEval = (moves && ply > 0) ? displayedEvalForMove(moves, ply - 1) : undefined;
 
   function setPly(p: number) {
     state.currentPly = p;
@@ -514,7 +521,7 @@ function BoardViewer({
           <button class="move-nav-btn move-nav-btn-critical" title="Jump to critical moment" onClick={() => setPly(criticalPly)}>⚡</button>
         )}
       </div>
-      {currentMove && (
+      {currentMove && currentMoveEval && (
         <div class="move-info-bar">
           <span class="move-info-notation">
             {currentMove.moveNumber}{currentMove.color === "black" ? "..." : "."} {currentMove.movePlayed}
@@ -524,7 +531,7 @@ function BoardViewer({
               </span>
             )}
           </span>
-          <span class={"move-info-eval " + evalClass(currentMove)}>{formatEval(currentMove)}</span>
+          <span class={"move-info-eval " + evalClass(currentMoveEval!)}>{formatEval(currentMoveEval!)}</span>
         </div>
       )}
     </div>
