@@ -230,19 +230,19 @@ type SyncGamesResponse struct {
 }
 
 type RecentGameItem struct {
-	Id             string `json:"id"`
-	WhiteUsername  string `json:"whiteUsername"`
-	WhiteRating    int    `json:"whiteRating"`
-	BlackUsername  string `json:"blackUsername"`
-	BlackRating    int    `json:"blackRating"`
-	TimeClass      string `json:"timeClass"`
-	TimeControl    string `json:"timeControl"`
-	Result         string `json:"result"`
-	UserColor      string `json:"userColor"`
-	StartTime      int64  `json:"startTime"`
-	Opening        string `json:"opening"`
-	OpeningECO     string `json:"openingEco"`
-	AnalysisStatus int    `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
+	Id             string  `json:"id"`
+	WhiteUsername  string  `json:"whiteUsername"`
+	WhiteRating    int     `json:"whiteRating"`
+	BlackUsername  string  `json:"blackUsername"`
+	BlackRating    int     `json:"blackRating"`
+	TimeClass      string  `json:"timeClass"`
+	TimeControl    string  `json:"timeControl"`
+	Result         string  `json:"result"`
+	UserColor      string  `json:"userColor"`
+	StartTime      int64   `json:"startTime"`
+	Opening        string  `json:"opening"`
+	OpeningECO     string  `json:"openingEco"`
+	AnalysisStatus int     `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
 	WhiteAccuracy  float64 `json:"whiteAccuracy"`
 	BlackAccuracy  float64 `json:"blackAccuracy"`
 }
@@ -274,9 +274,9 @@ type GetGameDetailRequest struct {
 type MoveAnalysisItem struct {
 	MoveNumber  int     `json:"moveNumber"`
 	Color       string  `json:"color"`
-	MovePlayed  string  `json:"movePlayed"`  // SAN when convertible, UCI fallback
-	BestMove    string  `json:"bestMove"`    // SAN when convertible, UCI fallback
-	Evaluation  int     `json:"evaluation"`  // centipawns, white-positive
+	MovePlayed  string  `json:"movePlayed"` // SAN when convertible, UCI fallback
+	BestMove    string  `json:"bestMove"`   // SAN when convertible, UCI fallback
+	Evaluation  int     `json:"evaluation"` // centipawns, white-positive
 	IsMate      bool    `json:"isMate"`
 	MateIn      int     `json:"mateIn"`
 	Accuracy    float64 `json:"accuracy"`    // per-move accuracy 0–100; -1 for first move (no prior position)
@@ -1263,40 +1263,12 @@ func GetMissedWins(ctx *vbeam.Context, req GameFilter) (resp GetMissedWinsRespon
 			return true
 		}
 
-		peakEval := 0
-		peakEvalMove := 0
-		for _, move := range analysis.Moves {
-			var userEval int
-			if move.IsMate {
-				if move.MateIn > 0 {
-					if game.UserColor == "white" {
-						userEval = 10000
-					} else {
-						userEval = -10000
-					}
-				} else {
-					if game.UserColor == "black" {
-						userEval = 10000
-					} else {
-						userEval = -10000
-					}
-				}
-			} else {
-				if game.UserColor == "white" {
-					userEval = move.Evaluation
-				} else {
-					userEval = -move.Evaluation
-				}
-			}
-			if userEval > peakEval {
-				peakEval = userEval
-				peakEvalMove = move.MoveNumber
-			}
-		}
-
-		if peakEval < 300 {
+		tagRes := TagGameFromEvals(gameOutcomeForUserGame(game), analysis.Moves, DefaultGameTagThresholds())
+		if !hasGameTag(tagRes.Tags, string(TagMissedWin)) {
 			return true
 		}
+
+		peakEval, peakEvalMove := userPeakEval(game.UserColor, &analysis, &tagRes)
 
 		var opponent string
 		var opponentRating int
@@ -1365,43 +1337,12 @@ func GetSavedGames(ctx *vbeam.Context, req GameFilter) (resp GetSavedGamesRespon
 			return true
 		}
 
-		// Track peak eval from the opponent's perspective.
-		peakOppEval := 0
-		peakOppEvalMove := 0
-		for _, move := range analysis.Moves {
-			var oppEval int
-			if move.IsMate {
-				if move.MateIn > 0 {
-					// White mates — good for white, so good for opponent when user is black.
-					if game.UserColor == "black" {
-						oppEval = 10000
-					} else {
-						oppEval = -10000
-					}
-				} else {
-					// Black mates — good for black, so good for opponent when user is white.
-					if game.UserColor == "white" {
-						oppEval = 10000
-					} else {
-						oppEval = -10000
-					}
-				}
-			} else {
-				if game.UserColor == "white" {
-					oppEval = -move.Evaluation // opponent is black; negative eval favors black
-				} else {
-					oppEval = move.Evaluation // opponent is white; positive eval favors white
-				}
-			}
-			if oppEval > peakOppEval {
-				peakOppEval = oppEval
-				peakOppEvalMove = move.MoveNumber
-			}
-		}
-
-		if peakOppEval < 300 {
+		tagRes := TagGameFromEvals(gameOutcomeForUserGame(game), analysis.Moves, DefaultGameTagThresholds())
+		if !hasGameTag(tagRes.Tags, string(TagSavedGame)) {
 			return true
 		}
+
+		peakOppEval, peakOppEvalMove := opponentPeakEval(game.UserColor, &analysis, &tagRes)
 
 		var opponent string
 		var opponentRating int
@@ -1440,6 +1381,63 @@ func GetSavedGames(ctx *vbeam.Context, req GameFilter) (resp GetSavedGamesRespon
 	return
 }
 
+func hasGameTag(tags []string, target string) bool {
+	for _, tag := range tags {
+		if tag == target {
+			return true
+		}
+	}
+	return false
+}
+
+func gameOutcomeForUserGame(game Game) string {
+	if game.Result == "draw" {
+		return "draw"
+	}
+	if game.Result == "win" {
+		if game.UserColor == "white" {
+			return "white"
+		}
+		return "black"
+	}
+	if game.UserColor == "white" {
+		return "black"
+	}
+	return "white"
+}
+
+func userPeakEval(userColor string, analysis *GameAnalysis, tagRes *GameTagResult) (int, int) {
+	if userColor == "white" {
+		return int(tagRes.Metrics.MaxWhiteEval * 100), firstMoveAtOrAbove(analysis.Moves, tagRes.Metrics.MaxWhiteEval)
+	}
+	return int(tagRes.Metrics.MaxBlackEval * 100), firstMoveAtOrBelow(analysis.Moves, -tagRes.Metrics.MaxBlackEval)
+}
+
+func opponentPeakEval(userColor string, analysis *GameAnalysis, tagRes *GameTagResult) (int, int) {
+	if userColor == "white" {
+		return int(tagRes.Metrics.MaxBlackEval * 100), firstMoveAtOrBelow(analysis.Moves, -tagRes.Metrics.MaxBlackEval)
+	}
+	return int(tagRes.Metrics.MaxWhiteEval * 100), firstMoveAtOrAbove(analysis.Moves, tagRes.Metrics.MaxWhiteEval)
+}
+
+func firstMoveAtOrAbove(moves []MoveAnalysis, target float64) int {
+	for _, m := range moves {
+		if normalizeEval(m) >= target {
+			return m.MoveNumber
+		}
+	}
+	return 0
+}
+
+func firstMoveAtOrBelow(moves []MoveAnalysis, target float64) int {
+	for _, m := range moves {
+		if normalizeEval(m) <= target {
+			return m.MoveNumber
+		}
+	}
+	return 0
+}
+
 // parsePGNHeader extracts the value of a PGN header tag, e.g. parsePGNHeader(pgn, "ECO") -> "B12"
 func parsePGNHeader(pgn, key string) string {
 	prefix := `[` + key + ` "`
@@ -1467,10 +1465,10 @@ var openingKeywords = []string{
 // Needed for Chess.com ECO URLs that place a modifier before the base opening name
 // (e.g. "Alapin-Sicilian-Defense" instead of "Sicilian-Defense-Alapin-Variation").
 var openingAliases = map[string][2]string{
-	"Alapin Sicilian Defense":        {"Sicilian Defense", "Alapin"},
-	"Closed Sicilian Defense":        {"Sicilian Defense", "Closed"},
-	"Vienna Game Max Lange Defense":  {"Vienna Game", "Max Lange Defense"},
-	"Vienna Game Anderssen Defense":  {"Vienna Game", "Anderssen Defense"},
+	"Alapin Sicilian Defense":       {"Sicilian Defense", "Alapin"},
+	"Closed Sicilian Defense":       {"Sicilian Defense", "Closed"},
+	"Vienna Game Max Lange Defense": {"Vienna Game", "Max Lange Defense"},
+	"Vienna Game Anderssen Defense": {"Vienna Game", "Anderssen Defense"},
 }
 
 // parseECOUrl splits a chess.com ECOUrl into top-level opening name and variation name.
