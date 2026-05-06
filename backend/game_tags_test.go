@@ -51,13 +51,13 @@ func TestTagGameChaoticBothWinning(t *testing.T) {
 	}
 }
 
-func TestTagGameSingleBlunder(t *testing.T) {
+func TestTagGameSingleSwing(t *testing.T) {
 	thr := DefaultGameTagThresholds()
 	e := []float64{0.1, 0.3, 0.4, -3.2, -3.3}
 	m := []int{1, 1, 2, 2, 3}
 	res := TagGameFromSeries("black", e, m, thr)
-	if !hasTag(res.Tags, "SingleBlunderGame") {
-		t.Fatalf("expected single blunder tag: %+v", res.Tags)
+	if !hasTag(res.Tags, "SingleSwingGame") {
+		t.Fatalf("expected single swing tag: %+v", res.Tags)
 	}
 }
 

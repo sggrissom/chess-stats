@@ -21,18 +21,18 @@ const (
 	TagComebackWin  GameTag = "ComebackWin"
 	TagThrow        GameTag = "Throw"
 
-	TagStableGame          GameTag = "StableGame"
-	TagSingleBlunderGame   GameTag = "SingleBlunderGame"
-	TagMultipleBlunderGame GameTag = "MultipleBlunderGame"
-	TagDecidedByBlunder    GameTag = "DecidedByBlunder"
-	TagGradualOutplay      GameTag = "GradualOutplay"
-	TagBackAndForthGame    GameTag = "BackAndForthGame"
+	TagStableGame        GameTag = "StableGame"
+	TagSingleSwingGame   GameTag = "SingleSwingGame"
+	TagMultipleSwingGame GameTag = "MultipleSwingGame"
+	TagDecidedBySwing    GameTag = "DecidedBySwing"
+	TagGradualOutplay    GameTag = "GradualOutplay"
+	TagBackAndForthGame  GameTag = "BackAndForthGame"
 
 	TagWhiteWonOpening GameTag = "WhiteWonOpening"
 	TagBlackWonOpening GameTag = "BlackWonOpening"
 	TagOpeningNeutral  GameTag = "OpeningNeutral"
-	TagEarlyBlunder    GameTag = "EarlyBlunder"
-	TagLateBlunder     GameTag = "LateBlunder"
+	TagEarlySwing      GameTag = "EarlySwing"
+	TagLateSwing       GameTag = "LateSwing"
 	TagEndgameDecision GameTag = "EndgameDecision"
 )
 
@@ -234,10 +234,10 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 	}
 
 	if m.MajorSwingCount == 1 {
-		tags[TagSingleBlunderGame] = true
+		tags[TagSingleSwingGame] = true
 	}
 	if m.MajorSwingCount >= 2 {
-		tags[TagMultipleBlunderGame] = true
+		tags[TagMultipleSwingGame] = true
 	}
 	if m.MajorSwingCount == 0 && !whiteTac && !blackTac {
 		tags[TagStableGame] = true
@@ -246,15 +246,15 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 		tags[TagBackAndForthGame] = true
 	}
 	if earlyBlunder {
-		tags[TagEarlyBlunder] = true
+		tags[TagEarlySwing] = true
 	}
 	if lateBlunder {
-		tags[TagLateBlunder] = true
+		tags[TagLateSwing] = true
 	}
 
 	if largestSwingIdx >= 0 {
 		if (result == "white" && largestSwingAfter > 0) || (result == "black" && largestSwingAfter < 0) {
-			tags[TagDecidedByBlunder] = true
+			tags[TagDecidedBySwing] = true
 		}
 	}
 
