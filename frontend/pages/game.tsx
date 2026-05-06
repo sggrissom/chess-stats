@@ -428,8 +428,9 @@ function MoveTable({
   return (
     <div class="move-table-section">
       <h4>Moves</h4>
-      <table class="move-table">
-        <thead>
+      <div class="move-table-scroll">
+        <table class="move-table">
+          <thead>
           <tr>
             <th>#</th>
             <th>White</th>
@@ -439,49 +440,50 @@ function MoveTable({
             <th>Eval</th>
             <th>Best</th>
           </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.num} class="move-row">
-              <td class="move-num">{row.num}</td>
-              {row.white ? (
-                <>
-                  <td
-                    class={"move-played " + moveQualityClass(row.white.moveQuality) + (currentPly === row.whiteIdx + 1 ? " move-active" : "") + (criticalPly === row.whiteIdx + 1 ? " move-critical-moment" : "")}
-                    onClick={() => onPlySelect(row.whiteIdx + 1)}
-                  >
-                    {row.white.movePlayed}
-                    {moveQualitySymbol(row.white.moveQuality) && (
-                      <span class="move-quality-symbol">{moveQualitySymbol(row.white.moveQuality)}</span>
-                    )}
-                  </td>
-                  <td class={"move-eval " + evalClass(displayedEvalForMove(moves, row.whiteIdx))}>{formatEval(displayedEvalForMove(moves, row.whiteIdx))}</td>
-                  <td class="move-best">{row.white.moveQuality && row.white.moveQuality !== "best" && row.white.moveQuality !== "excellent" && row.white.moveQuality !== "good" ? row.white.bestMove : "—"}</td>
-                </>
-              ) : (
-                <><td /><td /><td /></>
-              )}
-              {row.black ? (
-                <>
-                  <td
-                    class={"move-played " + moveQualityClass(row.black.moveQuality) + (currentPly === row.blackIdx + 1 ? " move-active" : "") + (criticalPly === row.blackIdx + 1 ? " move-critical-moment" : "")}
-                    onClick={() => onPlySelect(row.blackIdx + 1)}
-                  >
-                    {row.black.movePlayed}
-                    {moveQualitySymbol(row.black.moveQuality) && (
-                      <span class="move-quality-symbol">{moveQualitySymbol(row.black.moveQuality)}</span>
-                    )}
-                  </td>
-                  <td class={"move-eval " + evalClass(displayedEvalForMove(moves, row.blackIdx))}>{formatEval(displayedEvalForMove(moves, row.blackIdx))}</td>
-                  <td class="move-best">{row.black.moveQuality && row.black.moveQuality !== "best" && row.black.moveQuality !== "excellent" && row.black.moveQuality !== "good" ? row.black.bestMove : "—"}</td>
-                </>
-              ) : (
-                <><td /><td /><td /></>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.num} class="move-row">
+                <td class="move-num">{row.num}</td>
+                {row.white ? (
+                  <>
+                    <td
+                      class={"move-played " + moveQualityClass(row.white.moveQuality) + (currentPly === row.whiteIdx + 1 ? " move-active" : "") + (criticalPly === row.whiteIdx + 1 ? " move-critical-moment" : "")}
+                      onClick={() => onPlySelect(row.whiteIdx + 1)}
+                    >
+                      {row.white.movePlayed}
+                      {moveQualitySymbol(row.white.moveQuality) && (
+                        <span class="move-quality-symbol">{moveQualitySymbol(row.white.moveQuality)}</span>
+                      )}
+                    </td>
+                    <td class={"move-eval " + evalClass(displayedEvalForMove(moves, row.whiteIdx))}>{formatEval(displayedEvalForMove(moves, row.whiteIdx))}</td>
+                    <td class="move-best">{row.white.moveQuality && row.white.moveQuality !== "best" && row.white.moveQuality !== "excellent" && row.white.moveQuality !== "good" ? row.white.bestMove : "—"}</td>
+                  </>
+                ) : (
+                  <><td /><td /><td /></>
+                )}
+                {row.black ? (
+                  <>
+                    <td
+                      class={"move-played " + moveQualityClass(row.black.moveQuality) + (currentPly === row.blackIdx + 1 ? " move-active" : "") + (criticalPly === row.blackIdx + 1 ? " move-critical-moment" : "")}
+                      onClick={() => onPlySelect(row.blackIdx + 1)}
+                    >
+                      {row.black.movePlayed}
+                      {moveQualitySymbol(row.black.moveQuality) && (
+                        <span class="move-quality-symbol">{moveQualitySymbol(row.black.moveQuality)}</span>
+                      )}
+                    </td>
+                    <td class={"move-eval " + evalClass(displayedEvalForMove(moves, row.blackIdx))}>{formatEval(displayedEvalForMove(moves, row.blackIdx))}</td>
+                    <td class="move-best">{row.black.moveQuality && row.black.moveQuality !== "best" && row.black.moveQuality !== "excellent" && row.black.moveQuality !== "good" ? row.black.bestMove : "—"}</td>
+                  </>
+                ) : (
+                  <><td /><td /><td /></>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -514,10 +516,10 @@ function BoardViewer({
     <div class="board-viewer">
       <div class="board-svg" dangerouslySetInnerHTML={{ __html: svg }} />
       <div class="move-nav-buttons">
-        <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(0)}>|&lt;</button>
-        <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(ply - 1)}>&lt;</button>
-        <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(ply + 1)}>&gt;</button>
-        <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(lastPly)}>&gt;|</button>
+        <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(0)} aria-label="First move">|&lt;</button>
+        <button class="move-nav-btn" disabled={ply === 0} onClick={() => setPly(ply - 1)} aria-label="Previous move">&lt;</button>
+        <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(ply + 1)} aria-label="Next move">&gt;</button>
+        <button class="move-nav-btn" disabled={ply === lastPly} onClick={() => setPly(lastPly)} aria-label="Last move">&gt;|</button>
         {criticalPly !== undefined && (
           <button class="move-nav-btn move-nav-btn-critical" title="Jump to critical moment" onClick={() => setPly(criticalPly)}>⚡</button>
         )}
