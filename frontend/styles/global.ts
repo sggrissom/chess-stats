@@ -1831,3 +1831,32 @@ block(`
   }
 }
 `);
+
+block(`
+.game-tags-section {
+  margin-bottom: 16px;
+}
+`);
+
+block(`
+.game-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+`);
+
+block(`
+.game-tag-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--info);
+  border: 1px solid rgba(88, 166, 255, 0.25);
+}
+`);

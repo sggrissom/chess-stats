@@ -295,6 +295,7 @@ type GetGameDetailResponse struct {
 	Moves          []MoveAnalysisItem `json:"moves"`
 	ErrorMessage   string             `json:"errorMessage,omitempty"`
 	AnalyzedAt     int64              `json:"analyzedAt"`
+	Tags           []string           `json:"tags,omitempty"`
 }
 
 type RequestGameAnalysisRequest struct {
@@ -1749,6 +1750,8 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 
 	if status == AnalysisStatusDone && len(analysis.Moves) > 0 {
 		resp.Moves = convertMovesToSAN(pgn, analysis.Moves)
+		tagResult := TagGameFromEvals(gameOutcomeForUserGame(g), analysis.Moves, DefaultGameTagThresholds())
+		resp.Tags = tagResult.Tags
 	}
 	return
 }

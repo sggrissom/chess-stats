@@ -89,6 +89,7 @@ export interface GetGameDetailResponse {
     moves: MoveAnalysisItem[]
     errorMessage: string
     analyzedAt: number
+    tags: string[]
 }
 
 export interface RequestGameAnalysisRequest {
@@ -366,3 +367,4 @@ export async function GetMissedWins(data: GameFilter): Promise<rpc.Response<GetM
 export async function GetSavedGames(data: GameFilter): Promise<rpc.Response<GetSavedGamesResponse>> {
     return await rpc.call<GetSavedGamesResponse>('GetSavedGames', JSON.stringify(data));
 }
+

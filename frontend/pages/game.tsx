@@ -163,6 +163,10 @@ function moveQualitySymbol(q: string): string {
   return "";
 }
 
+function formatTagLabel(tag: string): string {
+  return tag.replace(/([A-Z])/g, " $1").trim();
+}
+
 function clampCp(m: MoveAnalysisItem): number {
   if (m.isMate) return m.mateIn > 0 ? 1000 : -1000;
   return Math.max(-1000, Math.min(1000, m.evaluation));
@@ -224,6 +228,20 @@ function MoveQualitySummary({ moves }: { moves: MoveAnalysisItem[] }) {
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function GameTags({ tags }: { tags: string[] }) {
+  if (!tags || tags.length === 0) return null;
+  return (
+    <div class="game-tags-section">
+      <h4>Game Tags</h4>
+      <div class="game-tags-list">
+        {tags.map(tag => (
+          <span class="game-tag-chip" key={tag}>{formatTagLabel(tag)}</span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -599,6 +617,7 @@ function AnalysisPanel({
   // ANALYSIS_DONE
   return (
     <div class="analysis-panel">
+      {detail.tags && detail.tags.length > 0 && <GameTags tags={detail.tags} />}
       <AccuracyBars white={detail.whiteAccuracy} black={detail.blackAccuracy} />
       {detail.moves && detail.moves.length > 0 && <PhaseAccuracyBreakdown moves={detail.moves} />}
       {detail.moves && detail.moves.length > 0 && <MoveQualitySummary moves={detail.moves} />}
