@@ -314,3 +314,105 @@ func moveAccuracy(wpLoss float64) float64 {
 	}
 	return acc
 }
+
+
+// TagBrilliantMoves marks tactical sacrifice moves as brilliant using Stockfish eval deltas
+// and simple material sacrifice heuristics.
+func TagBrilliantMoves(pgn string, moves []MoveAnalysis) []MoveAnalysis {
+	if len(moves) < 2 {
+		return moves
+	}
+
+	reader := strings.NewReader(pgn)
+	pgnReader, err := chess.PGN(reader)
+	if err != nil {
+		return moves
+	}
+	game := chess.NewGame(pgnReader)
+	positions := game.Positions()
+	if len(positions) < 2 {
+		return moves
+	}
+
+	for i := 0; i < len(moves)-1 && i+1 < len(positions); i++ {
+		m := &moves[i]
+		if m.MovePlayed != m.BestMove {
+			continue
+		}
+
+		beforeEval := normalizeEvalCp(moves[i])
+		afterEval := normalizeEvalCp(moves[i+1])
+		wpBefore := winProbability(beforeEval)
+		wpAfter := winProbability(afterEval)
+
+		var gain float64
+		if m.Color == "white" {
+			gain = wpAfter - wpBefore
+		} else {
+			gain = wpBefore - wpAfter
+		}
+		if gain < 8.0 {
+			continue
+		}
+
+		beforeMaterial := materialBalanceForColor(positions[i].Board(), m.Color)
+		afterMaterial := materialBalanceForColor(positions[i+1].Board(), m.Color)
+		if afterMaterial-beforeMaterial > -2 {
+			continue
+		}
+
+		m.Brilliant = true
+		m.BrilliantReason = "sacrifice_with_eval_gain"
+	}
+
+	return moves
+}
+
+func normalizeEvalCp(ma MoveAnalysis) int {
+	if !ma.IsMate {
+		return ma.Evaluation
+	}
+	if ma.MateIn > 0 {
+		return 10000
+	}
+	return -10000
+}
+
+func materialBalanceForColor(board *chess.Board, color string) int {
+	white, black := materialBySide(board)
+	if color == "white" {
+		return white - black
+	}
+	return black - white
+}
+
+func materialBySide(board *chess.Board) (white int, black int) {
+	for sq := chess.Square(0); sq <= chess.H8; sq++ {
+		piece := board.Piece(sq)
+		if piece == chess.NoPiece {
+			continue
+		}
+		value := pieceValue(piece.Type())
+		if piece.Color() == chess.White {
+			white += value
+		} else {
+			black += value
+		}
+	}
+	return
+}
+
+func pieceValue(pieceType chess.PieceType) int {
+	switch pieceType {
+	case chess.Pawn:
+		return 1
+	case chess.Knight, chess.Bishop:
+		return 3
+	case chess.Rook:
+		return 5
+	case chess.Queen:
+		return 9
+	default:
+		return 0
+	}
+}
