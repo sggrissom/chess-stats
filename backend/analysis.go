@@ -19,13 +19,15 @@ const (
 // MoveAnalysis holds Stockfish evaluation data for a single ply.
 // Evaluation is always from white's absolute perspective (positive = white winning).
 type MoveAnalysis struct {
-	MoveNumber int    // 1-based full-move number
-	Color      string // "white" or "black"
-	MovePlayed string // UCI notation e.g. "e2e4"
-	BestMove   string // UCI notation from Stockfish bestmove
-	Evaluation int    // centipawns; ignored when IsMate is true
-	IsMate     bool   // true when score is a forced mate
-	MateIn     int    // positive = white mates in N, negative = black mates in N
+	MoveNumber     int    // 1-based full-move number
+	Color          string // "white" or "black"
+	MovePlayed     string // UCI notation e.g. "e2e4"
+	BestMove       string // UCI notation from Stockfish bestmove
+	Evaluation     int    // centipawns; ignored when IsMate is true
+	IsMate         bool   // true when score is a forced mate
+	MateIn         int    // positive = white mates in N, negative = black mates in N
+	Brilliant      bool   // true when move is tagged as a brilliant tactical idea
+	BrilliantReason string // short machine-readable reason for brilliant tag
 }
 
 func packMoveAnalysis(self *MoveAnalysis, buf *vpack.Buffer) {
@@ -37,6 +39,8 @@ func packMoveAnalysis(self *MoveAnalysis, buf *vpack.Buffer) {
 	vpack.Int(&self.Evaluation, buf)
 	vpack.Bool(&self.IsMate, buf)
 	vpack.Int(&self.MateIn, buf)
+	vpack.Bool(&self.Brilliant, buf)
+	vpack.String(&self.BrilliantReason, buf)
 }
 
 func packMoveAnalysisSlice(moves *[]MoveAnalysis, buf *vpack.Buffer) {

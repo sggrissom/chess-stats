@@ -119,6 +119,7 @@ func (w *analysisWorker) processAnalysisJob(job AnalysisJob) {
 		return
 	}
 
+	moves = TagBrilliantMoves(pgn, moves)
 	whiteAccuracy, blackAccuracy := ComputeAccuracy(moves)
 	// Round to 1 decimal place
 	whiteAccuracy = math.Round(whiteAccuracy*10) / 10
