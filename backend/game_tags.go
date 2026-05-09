@@ -7,13 +7,9 @@ const mateEval = 100.0
 type GameTag string
 
 const (
-	TagWhiteHadSustainedWin GameTag = "WhiteHadSustainedWin"
-	TagBlackHadSustainedWin GameTag = "BlackHadSustainedWin"
-	TagWhiteHadTacticalWin  GameTag = "WhiteHadTacticalWin"
-	TagBlackHadTacticalWin  GameTag = "BlackHadTacticalWin"
-	TagWhiteHadWin          GameTag = "WhiteHadWin"
-	TagBlackHadWin          GameTag = "BlackHadWin"
-	TagChaoticGame          GameTag = "ChaoticGame"
+	TagWhiteHadWin GameTag = "WhiteHadWin"
+	TagBlackHadWin GameTag = "BlackHadWin"
+	TagChaoticGame GameTag = "ChaoticGame"
 
 	TagConvertedWin GameTag = "ConvertedWin"
 	TagMissedWin    GameTag = "MissedWin"
@@ -37,9 +33,9 @@ const (
 )
 
 type GameTagThresholds struct {
-	SustainedWinningEval  float64
-	SustainedWinningPlies int
-	TacticalWinningEval   float64
+	PracticalWinningEval  float64
+	PracticalWinningPlies int
+	ImmediateWinningEval  float64
 	OpeningEvalThreshold  float64
 	OpeningMoveNumber     int
 	MajorSwingThreshold   float64
@@ -88,10 +84,8 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 	}
 	m := GameTagMetrics{MaxBlackEval: math.MaxFloat64 * -1}
 	tags := map[GameTag]bool{}
-	whiteTac := false
-	blackTac := false
-	whiteSustain := false
-	blackSustain := false
+	whiteHadWin := false
+	blackHadWin := false
 	wRun := 0
 	bRun := 0
 	crosses := 0
@@ -109,31 +103,31 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 		if -v > m.MaxBlackEval {
 			m.MaxBlackEval = -v
 		}
-		if v >= t.TacticalWinningEval {
-			whiteTac = true
+		if v >= t.ImmediateWinningEval {
+			whiteHadWin = true
 		}
-		if v <= -t.TacticalWinningEval {
-			blackTac = true
+		if v <= -t.ImmediateWinningEval {
+			blackHadWin = true
 		}
-		if v >= t.SustainedWinningEval {
+		if v >= t.PracticalWinningEval {
 			wRun++
 		} else {
 			wRun = 0
 		}
-		if v <= -t.SustainedWinningEval {
+		if v <= -t.PracticalWinningEval {
 			bRun++
 		} else {
 			bRun = 0
 		}
-		if !whiteSustain && wRun >= t.SustainedWinningPlies {
-			whiteSustain = true
+		if !whiteHadWin && wRun >= t.PracticalWinningPlies {
+			whiteHadWin = true
 			m.FirstWhiteWinningPly = i + 1
 			if firstSustainMove == 0 {
 				firstSustainMove = moveNumbers[i]
 			}
 		}
-		if !blackSustain && bRun >= t.SustainedWinningPlies {
-			blackSustain = true
+		if !blackHadWin && bRun >= t.PracticalWinningPlies {
+			blackHadWin = true
 			m.FirstBlackWinningPly = i + 1
 			if firstSustainMove == 0 {
 				firstSustainMove = moveNumbers[i]
@@ -173,20 +167,6 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 		}
 	}
 
-	whiteHadWin := whiteTac || whiteSustain
-	blackHadWin := blackTac || blackSustain
-	if whiteSustain {
-		tags[TagWhiteHadSustainedWin] = true
-	}
-	if blackSustain {
-		tags[TagBlackHadSustainedWin] = true
-	}
-	if whiteTac {
-		tags[TagWhiteHadTacticalWin] = true
-	}
-	if blackTac {
-		tags[TagBlackHadTacticalWin] = true
-	}
 	if whiteHadWin {
 		tags[TagWhiteHadWin] = true
 	}
@@ -198,8 +178,8 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 	}
 
 	finalEval := whiteEvals[len(whiteEvals)-1]
-	whiteLosingAtSomePoint := m.MaxBlackEval >= t.SustainedWinningEval
-	blackLosingAtSomePoint := m.MaxWhiteEval >= t.SustainedWinningEval
+	whiteLosingAtSomePoint := blackHadWin
+	blackLosingAtSomePoint := whiteHadWin
 	switch result {
 	case "white":
 		if whiteHadWin {
@@ -239,7 +219,7 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 	if m.MajorSwingCount >= 2 {
 		tags[TagMultipleSwingGame] = true
 	}
-	if m.MajorSwingCount == 0 && !whiteTac && !blackTac {
+	if m.MajorSwingCount == 0 && !whiteHadWin && !blackHadWin {
 		tags[TagStableGame] = true
 	}
 	if crosses > 1 {
