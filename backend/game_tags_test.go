@@ -16,7 +16,7 @@ func TestTagGameCleanConvertedWin(t *testing.T) {
 	e := []float64{0.2, 0.4, 1, 2, 3.2, 3.4, 3.5, 3.7, 3.6, 3.8}
 	m := []int{1, 1, 2, 2, 3, 3, 4, 4, 5, 5}
 	res := TagGameFromSeries("white", e, m, thr)
-	if !hasTag(res.Tags, "ConvertedWin") || !hasTag(res.Tags, "WhiteHadSustainedWin") {
+	if !hasTag(res.Tags, "ConvertedWin") || !hasTag(res.Tags, "WhiteHadWin") {
 		t.Fatalf("expected converted sustained win tags: %+v", res.Tags)
 	}
 }
@@ -81,20 +81,30 @@ func TestTagGameOpeningTags(t *testing.T) {
 	}
 }
 
-func TestTagGameMateAndTacticalSpike(t *testing.T) {
+func TestTagGameMateAndPracticalSpike(t *testing.T) {
 	thr := DefaultGameTagThresholds()
 	fromMoves := []MoveAnalysis{{MoveNumber: 1, Evaluation: 20}, {MoveNumber: 2, IsMate: true, MateIn: 3}}
 	resMate := TagGameFromEvals("white", fromMoves, thr)
 	resTac := TagGameFromSeries("white", []float64{0.1, 5.1, 0.0}, []int{1, 2, 2}, thr)
-	if !hasTag(resMate.Tags, "WhiteHadTacticalWin") || !hasTag(resTac.Tags, "WhiteHadTacticalWin") {
-		t.Fatalf("expected tactical win via mate/spike: mate=%+v tac=%+v", resMate.Tags, resTac.Tags)
+	if !hasTag(resMate.Tags, "WhiteHadWin") || !hasTag(resTac.Tags, "WhiteHadWin") {
+		t.Fatalf("expected practical win via mate/spike: mate=%+v tac=%+v", resMate.Tags, resTac.Tags)
 	}
 }
 
 func TestTagGameBriefThreeNotSustained(t *testing.T) {
 	thr := DefaultGameTagThresholds()
 	res := TagGameFromSeries("white", []float64{0.1, 3.1, 0.2, 0.3}, []int{1, 2, 2, 3}, thr)
-	if hasTag(res.Tags, "WhiteHadSustainedWin") {
-		t.Fatalf("should not be sustained win: %+v", res.Tags)
+	if hasTag(res.Tags, "WhiteHadWin") {
+		t.Fatalf("should not be practical win: %+v", res.Tags)
+	}
+}
+
+func TestTagGameNoComebackFromSmallLead(t *testing.T) {
+	thr := DefaultGameTagThresholds()
+	e := []float64{0.4, 0.2, -0.3, 0.1, 0.2}
+	m := []int{1, 1, 2, 2, 3}
+	res := TagGameFromSeries("white", e, m, thr)
+	if hasTag(res.Tags, "ComebackWin") || hasTag(res.Tags, "BackAndForthGame") {
+		t.Fatalf("should not tag small-advantage game as comeback/back-and-forth: %+v", res.Tags)
 	}
 }
