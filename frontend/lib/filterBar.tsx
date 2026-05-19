@@ -23,6 +23,33 @@ export function periodToSince(period: string): number {
   }
 }
 
+export function periodToComparisonRange(period: string): { since: number; until: number } | null {
+  const now = Date.now() / 1000;
+  switch (period) {
+    case "today": {
+      const d = new Date(); d.setHours(0, 0, 0, 0);
+      const todayStart = Math.floor(d.getTime() / 1000);
+      return { since: todayStart - 86400, until: todayStart };
+    }
+    case "7d":  return { since: Math.floor(now - 14 * 86400), until: Math.floor(now - 7 * 86400) };
+    case "30d": return { since: Math.floor(now - 60 * 86400), until: Math.floor(now - 30 * 86400) };
+    case "90d": return { since: Math.floor(now - 180 * 86400), until: Math.floor(now - 90 * 86400) };
+    case "1y":  return { since: Math.floor(now - 730 * 86400), until: Math.floor(now - 365 * 86400) };
+    default:    return null;
+  }
+}
+
+export function periodToComparisonLabel(period: string): string | null {
+  switch (period) {
+    case "today": return "vs. yesterday";
+    case "7d":    return "vs. prev. 7 days";
+    case "30d":   return "vs. 30–60 days ago";
+    case "90d":   return "vs. 90–180 days ago";
+    case "1y":    return "vs. prev. year";
+    default:      return null;
+  }
+}
+
 export function buildFilter(state: FilterState): GameFilter {
   return {
     timeClass: state.filterTimeClass,

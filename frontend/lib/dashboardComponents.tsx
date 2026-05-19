@@ -125,6 +125,11 @@ function winPct(r: { wins: number; losses: number; draws: number }): string {
   return Math.round((r.wins / total) * 100) + "%";
 }
 
+function winPctNum(r: { wins: number; losses: number; draws: number }): number | null {
+  const total = r.wins + r.losses + r.draws;
+  return total === 0 ? null : Math.round((r.wins / total) * 100);
+}
+
 function totalColor(r: ColorRecord): number {
   return r.wins + r.losses + r.draws;
 }
@@ -233,7 +238,12 @@ async function onOpeningExplorerPage(state: OpeningsState, filter: GameFilter, k
 
 // ─── Record ───────────────────────────────────────────────────────────────────
 
-function RecordRow({ label, r }: { label: string; r: { wins: number; losses: number; draws: number } }) {
+type RecordLike = { wins: number; losses: number; draws: number };
+
+function RecordRow({ label, r, prev }: { label: string; r: RecordLike; prev?: RecordLike | null }) {
+  const currPct = winPctNum(r);
+  const prevPct = prev != null ? winPctNum(prev) : null;
+  const delta = currPct !== null && prevPct !== null ? currPct - prevPct : null;
   return (
     <tr>
       <td>{label}</td>
@@ -241,6 +251,14 @@ function RecordRow({ label, r }: { label: string; r: { wins: number; losses: num
       <td>{r.losses}</td>
       <td>{r.draws}</td>
       <td>{winPct(r)}</td>
+      {prev !== undefined && (
+        <>
+          <td style="color:var(--text-muted)">{prevPct !== null ? prevPct + "%" : "—"}</td>
+          <td style={delta === null ? "" : delta > 0 ? "color:var(--win)" : delta < 0 ? "color:var(--loss)" : "color:var(--text-muted)"}>
+            {delta === null ? "—" : delta > 0 ? `▲${delta}pp` : delta < 0 ? `▼${Math.abs(delta)}pp` : "="}
+          </td>
+        </>
+      )}
     </tr>
   );
 }
@@ -582,8 +600,10 @@ export function GameExtremeSection({ sectionKey, title, subtitle, games, evalLab
 
 // ─── Stats Section ────────────────────────────────────────────────────────────
 
-export function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend, streaks, missedWins, savedGames, state }: {
+export function StatsSection({ stats, comparisonStats, comparisonLabel, ratingHistory, winRateTrend, accuracyTrend, streaks, missedWins, savedGames, state }: {
   stats: GetGameStatsResponse | null;
+  comparisonStats: GetGameStatsResponse | null;
+  comparisonLabel: string | null;
   ratingHistory: GetRatingHistoryResponse | null;
   winRateTrend: GetWinRateTrendResponse | null;
   accuracyTrend: GetAccuracyTrendResponse | null;
@@ -602,13 +622,26 @@ export function StatsSection({ stats, ratingHistory, winRateTrend, accuracyTrend
       {stats && (
         <div class="stats-section">
           <h3>Record</h3>
+          {comparisonStats && comparisonLabel && (
+            <p style="font-size:12px;color:var(--text-muted);margin:0 0 6px">{comparisonLabel}</p>
+          )}
           <table class="stats-table">
             <thead>
-              <tr><th></th><th>W</th><th>L</th><th>D</th><th>Win%</th></tr>
+              <tr>
+                <th></th><th>W</th><th>L</th><th>D</th><th>Win%</th>
+                {comparisonStats && <><th style="color:var(--text-muted)">Prev W%</th><th style="color:var(--text-muted)">Δ</th></>}
+              </tr>
             </thead>
             <tbody>
-              <RecordRow label="Overall" r={stats.overall} />
-              {classes.map(tc => <RecordRow key={tc} label={tc.charAt(0).toUpperCase() + tc.slice(1)} r={stats.byClass[tc]} />)}
+              <RecordRow label="Overall" r={stats.overall} prev={comparisonStats?.overall} />
+              {classes.map(tc => (
+                <RecordRow
+                  key={tc}
+                  label={tc.charAt(0).toUpperCase() + tc.slice(1)}
+                  r={stats.byClass[tc]}
+                  prev={comparisonStats ? (comparisonStats.byClass[tc] ?? null) : undefined}
+                />
+              ))}
             </tbody>
           </table>
         </div>

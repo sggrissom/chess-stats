@@ -8,12 +8,14 @@ import {
   GetAccuracyTrendResponse, GetStreaksResponse, GetMissedWinsResponse, GetSavedGamesResponse, GameFilter,
 } from "../../server";
 import { requireAuthInView, ensureAuthInFetch } from "../../lib/authHelpers";
-import { FilterState, FilterBar } from "../../lib/filterBar";
+import { FilterState, FilterBar, periodToComparisonRange, periodToComparisonLabel } from "../../lib/filterBar";
 import { DashboardLayout } from "../../lib/dashboardLayout";
 import { StatsSection, StatsState, fetchStatsData } from "../../lib/dashboardComponents";
 
 type Data = {
   stats: GetGameStatsResponse | null;
+  comparisonStats: GetGameStatsResponse | null;
+  comparisonLabel: string | null;
   ratingHistory: GetRatingHistoryResponse | null;
   winRateTrend: GetWinRateTrendResponse | null;
   accuracyTrend: GetAccuracyTrendResponse | null;
@@ -34,17 +36,31 @@ const useState = vlens.declareHook((): State => ({
 }));
 
 let _data: Data;
+let _state: State;
 
 async function refetch(filter: GameFilter) {
-  await fetchStatsData(filter, _data);
+  const period = _state?.filterTimePeriod ?? "all";
+  const compRange = periodToComparisonRange(period);
+  if (compRange) {
+    const compFilter: GameFilter = { ...filter, since: compRange.since, until: compRange.until };
+    const [, [cs]] = await Promise.all([
+      fetchStatsData(filter, _data),
+      server.GetGameStats(compFilter),
+    ]);
+    _data.comparisonStats = cs ?? null;
+  } else {
+    await fetchStatsData(filter, _data);
+    _data.comparisonStats = null;
+  }
+  _data.comparisonLabel = periodToComparisonLabel(period);
 }
 
 export async function fetch(route: string, prefix: string) {
-  if (!(await ensureAuthInFetch())) return rpc.ok<Data>({ stats: null, ratingHistory: null, winRateTrend: null, accuracyTrend: null, streaks: null, missedWins: null, savedGames: null });
+  if (!(await ensureAuthInFetch())) return rpc.ok<Data>({ stats: null, comparisonStats: null, comparisonLabel: null, ratingHistory: null, winRateTrend: null, accuracyTrend: null, streaks: null, missedWins: null, savedGames: null });
   const [profile] = await server.GetChessProfile({});
   if (!profile?.chesscomUsername) {
     core.setRoute("/dashboard");
-    return rpc.ok<Data>({ stats: null, ratingHistory: null, winRateTrend: null, accuracyTrend: null, streaks: null, missedWins: null, savedGames: null });
+    return rpc.ok<Data>({ stats: null, comparisonStats: null, comparisonLabel: null, ratingHistory: null, winRateTrend: null, accuracyTrend: null, streaks: null, missedWins: null, savedGames: null });
   }
   const defaultFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0, until: 0 };
   const [[s], [rh], [wrt], [at], [st], [mw], [sg]] = await Promise.all([
@@ -58,6 +74,8 @@ export async function fetch(route: string, prefix: string) {
   ]);
   const data: Data = {
     stats: s ?? null,
+    comparisonStats: null,
+    comparisonLabel: null,
     ratingHistory: rh ?? null,
     winRateTrend: wrt ?? null,
     accuracyTrend: at ?? null,
@@ -73,11 +91,14 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
   const currentAuth = requireAuthInView();
   if (!currentAuth) return null;
   const state = useState();
+  _state = state;
   return (
     <DashboardLayout name={currentAuth.name} route={route}>
       <FilterBar state={state} onRefetch={refetch} />
       <StatsSection
         stats={data.stats}
+        comparisonStats={data.comparisonStats}
+        comparisonLabel={data.comparisonLabel}
         ratingHistory={data.ratingHistory}
         winRateTrend={data.winRateTrend}
         accuracyTrend={data.accuracyTrend}
