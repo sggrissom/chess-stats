@@ -32,8 +32,19 @@ const useGamePageState = vlens.declareHook(
   })
 );
 
+function gamePathFromRoute(route: string): string {
+  return route.split("?")[0];
+}
+
 function extractGameId(route: string, prefix: string): string {
-  return route.slice(prefix.length + 1);
+  const path = gamePathFromRoute(route);
+  return path.slice(prefix.length + 1);
+}
+
+function backRouteFromGameRoute(route: string): string {
+  const query = route.split("?")[1] || "";
+  const params = new URLSearchParams(query);
+  return params.get("from") || lastGamesRoute;
 }
 
 export async function fetch(route: string, prefix: string) {
@@ -649,7 +660,7 @@ function GameDetailPage({
     return (
       <div class="dashboard-page">
         <div class="dashboard-content">
-          <p><a href="#" onClick={(e) => { e.preventDefault(); core.setRoute(lastGamesRoute); }}>← Games</a></p>
+          <p><a href="#" onClick={(e) => { e.preventDefault(); core.setRoute(backRouteFromGameRoute(route)); }}>← Games</a></p>
           <p>Game not found.</p>
         </div>
       </div>
@@ -665,7 +676,7 @@ function GameDetailPage({
     <div class="dashboard-page">
       <div class="dashboard-content">
         <p class="back-link">
-          <a href="#" onClick={(e) => { e.preventDefault(); core.setRoute(lastGamesRoute); }}>← Games</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); core.setRoute(backRouteFromGameRoute(route)); }}>← Games</a>
         </p>
         <GameHeader game={detail.game} />
         {detail.boardSvgs && detail.boardSvgs.length > 0 && (

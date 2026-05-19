@@ -10,7 +10,7 @@ import {
 } from "../../server";
 import { requireAuthInView, ensureAuthInFetch } from "../../lib/authHelpers";
 import { DashboardLayout } from "../../lib/dashboardLayout";
-import { StreaksSection, TIME_CLASS_ORDER, formatDate } from "../../lib/dashboardComponents";
+import { StreaksSection, TIME_CLASS_ORDER, formatDate, gameDetailRoute } from "../../lib/dashboardComponents";
 
 type Data = {
   chesscomUsername: string;
@@ -260,7 +260,7 @@ function OverviewContent({ data }: { data: Data }) {
               const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
               const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
               return (
-                <div key={g.id} class="mini-game-row" onClick={() => core.setRoute("/game/" + g.id)}>
+                <div key={g.id} class="mini-game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
                   <span class="mini-game-date">{formatDate(g.startTime)}</span>
                   <span class="mini-game-opponent">{opponent}</span>
                   <span class={resultClass} style="min-width:36px;font-weight:600;font-size:13px">{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</span>
