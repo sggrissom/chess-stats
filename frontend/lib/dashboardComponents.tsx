@@ -114,6 +114,10 @@ export function analysisBadge(status: number, whiteAccuracy: number, blackAccura
   return null;
 }
 
+export function gameDetailRoute(gameId: string): string {
+  return `/game/${gameId}?from=${encodeURIComponent(core.getRoute())}`;
+}
+
 export function formatDate(ts: number): string {
   const d = new Date(ts * 1000);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -558,7 +562,7 @@ function GameExtremeRow({ g, evalLabel }: { g: MissedWinGame; evalLabel: string 
   const evalDisplay = g.peakEval >= 10000 ? "+M" : `+${(g.peakEval / 100).toFixed(1)}`;
   return (
     <tr key={g.gameId}>
-      <td><a href={"/game/" + g.gameId}>{date}</a></td>
+      <td><a href={gameDetailRoute(g.gameId)}>{date}</a></td>
       <td>{g.opponent} ({g.opponentRating})</td>
       <td>{g.userColor}</td>
       <td class={"result-" + g.result}>{g.result}</td>
@@ -796,7 +800,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                 const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
                 const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
                 return (
-                  <tr key={g.id} class="game-row" onClick={() => core.setRoute("/game/" + g.id)}>
+                  <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
                     <td>{formatDate(g.startTime)}</td>
                     <td>{opponent}</td>
                     <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
@@ -994,7 +998,7 @@ export function RecentGamesSection({ data, state }: {
             const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
             const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
             return (
-              <tr key={g.id} class="game-row" onClick={() => core.setRoute("/game/" + g.id)}>
+              <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
                 <td>{formatDate(g.startTime)}</td>
                 <td>{opponent}</td>
                 <td>{g.userColor === "white" ? "♙ White" : "♟ Black"}</td>
