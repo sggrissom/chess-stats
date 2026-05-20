@@ -77,4 +77,5 @@ jobs:
       - name: Deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: make deploy DEPLOY_HOST="$DEPLOY_HOST"
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: make deploy DEPLOY_HOST="$DEPLOY_USER@$DEPLOY_HOST"
