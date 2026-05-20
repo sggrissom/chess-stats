@@ -74,6 +74,15 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Checkout deploy tool
+        uses: actions/checkout@v4
+        with:
+          repository: sggrissom/tiny-server-helper
+          path: .tiny-server-helper
+
+      - name: Install deploy tool
+        run: sudo cp .tiny-server-helper/bin/deploy /usr/local/bin/deploy
+
       - name: Deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
