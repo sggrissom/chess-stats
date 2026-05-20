@@ -11,7 +11,7 @@ import { GamesState, GamesData, RecentGamesSection, loadRecentGames } from "../.
 
 type Data = GamesData;
 
-type State = FilterState & GamesState;
+type State = FilterState & GamesState & { initialized: boolean };
 
 const useState = vlens.declareHook((): State => ({
   filterTimeClass: "",
@@ -22,6 +22,7 @@ const useState = vlens.declareHook((): State => ({
   gamesLoading: false,
   gamesSince: 0,
   gamesUntil: 0,
+  initialized: false,
 }));
 
 let _data: Data;
@@ -66,7 +67,8 @@ function formatDisplayDate(dateStr: string): string {
 }
 
 function getDateFromRoute(route: string, prefix: string): string {
-  const suffix = route.slice(prefix.length + 1);
+  const path = route.split("?")[0];
+  const suffix = path.slice(prefix.length + 1);
   return parseDateSuffix(suffix) || todayString();
 }
 
@@ -99,6 +101,17 @@ function DayNav({ dateStr }: { dateStr: string }) {
 
 async function refetch(_filter: GameFilter) {
   _state.gamesOffset = 0;
+  const params = new URLSearchParams(window.location.search);
+  if (_state.filterTimeClass) params.set("tc", _state.filterTimeClass);
+  else params.delete("tc");
+  if (_state.filterMinRating) params.set("minRating", _state.filterMinRating);
+  else params.delete("minRating");
+  if (_state.filterMaxRating) params.set("maxRating", _state.filterMaxRating);
+  else params.delete("maxRating");
+  const newSearch = params.toString();
+  const newUrl = window.location.pathname + (newSearch ? "?" + newSearch : "");
+  history.replaceState(null, "", newUrl);
+  lastGamesRoute = newUrl;
   await loadRecentGames(_state, _data);
 }
 
@@ -111,7 +124,14 @@ export async function fetch(route: string, prefix: string) {
   }
   const dateStr = getDateFromRoute(route, prefix);
   const [since, until] = dateToBounds(dateStr);
-  const filter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since, until };
+  const urlParams = new URLSearchParams(route.split("?")[1] || "");
+  const filter: GameFilter = {
+    timeClass: urlParams.get("tc") || "",
+    minOpponentRating: parseInt(urlParams.get("minRating") || "") || 0,
+    maxOpponentRating: parseInt(urlParams.get("maxRating") || "") || 0,
+    since,
+    until,
+  };
   const [resp] = await server.GetRecentGames({ filter, limit: 50, offset: 0 });
   const data: Data = { recentGames: resp?.games ?? [], gamesTotal: resp?.total ?? 0 };
   _data = data;
@@ -124,11 +144,19 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
   const state = useState();
   _state = state;
 
+  if (!state.initialized) {
+    state.initialized = true;
+    const params = new URLSearchParams(window.location.search);
+    state.filterTimeClass = params.get("tc") || "";
+    state.filterMinRating = params.get("minRating") || "";
+    state.filterMaxRating = params.get("maxRating") || "";
+  }
+
   const dateStr = getDateFromRoute(route, prefix);
   const [since, until] = dateToBounds(dateStr);
   state.gamesSince = since;
   state.gamesUntil = until;
-  lastGamesRoute = route;
+  lastGamesRoute = window.location.pathname + window.location.search;
 
   return (
     <DashboardLayout name={currentAuth.name} route={route}>
