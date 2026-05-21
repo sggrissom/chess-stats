@@ -76,12 +76,14 @@ function getDateFromRoute(route: string, prefix: string): string {
 
 function onPrevDay(dateStr: string, event: Event) {
   event.preventDefault();
-  core.setRoute("/dashboard/games/" + shiftDate(dateStr, -1));
+  const search = window.location.search || "";
+  core.setRoute("/dashboard/games/" + shiftDate(dateStr, -1) + search);
 }
 
 function onNextDay(dateStr: string, event: Event) {
   event.preventDefault();
-  core.setRoute("/dashboard/games/" + shiftDate(dateStr, 1));
+  const search = window.location.search || "";
+  core.setRoute("/dashboard/games/" + shiftDate(dateStr, 1) + search);
 }
 
 function DayNav({ dateStr }: { dateStr: string }) {
