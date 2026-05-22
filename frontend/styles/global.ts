@@ -1664,6 +1664,8 @@ block(`
   position: sticky;
   top: 53px;
   z-index: 9;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 `);
 
@@ -1678,6 +1680,72 @@ block(`
   margin-bottom: -1px;
   transition: color 0.15s, border-color 0.15s;
   white-space: nowrap;
+  flex: 0 0 auto;
+}
+`);
+
+block(`
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+`);
+
+block(`
+.games-actions {
+  display: flex;
+  gap: 8px;
+}
+`);
+
+block(`
+.games-cards {
+  display: none;
+}
+`);
+
+block(`
+.game-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+`);
+
+block(`
+.game-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+`);
+
+block(`
+.game-card-opponent {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+`);
+
+block(`
+.game-card-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+`);
+
+block(`
+.game-card-opening {
+  color: var(--text-muted);
+  font-size: 13px;
 }
 `);
 
@@ -1816,6 +1884,67 @@ block(`
 
 block(`
 @media (max-width: 640px) {
+  .dashboard-content {
+    padding: 14px 12px;
+  }
+  .dashboard-header {
+    padding: 10px 12px;
+  }
+  .dashboard-header h1 {
+    font-size: 1rem;
+  }
+  .dashboard-nav {
+    padding: 0 8px;
+    top: 49px;
+  }
+  .nav-link {
+    padding: 10px 12px;
+  }
+  .filter-bar {
+    gap: 8px;
+  }
+  .filter-row {
+    width: 100%;
+  }
+  .filter-row select {
+    width: 100%;
+  }
+  .filter-row input[type="number"] {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .day-nav {
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .day-nav-label {
+    min-width: 0;
+    font-size: 14px;
+  }
+  .games-section-header {
+    align-items: stretch;
+    gap: 8px;
+  }
+  .games-actions {
+    width: 100%;
+  }
+  .games-actions .btn {
+    flex: 1 1 0;
+  }
+  .games-table {
+    display: none;
+  }
+  .games-cards {
+    display: block;
+    margin-top: 8px;
+  }
+  .pagination {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pagination .btn {
+    flex: 1 1 calc(50% - 4px);
+  }
   .overview-two-col { grid-template-columns: 1fr; }
   .board-viewer {
     width: 100%;

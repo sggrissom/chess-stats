@@ -979,38 +979,63 @@ export function RecentGamesSection({ data, state }: {
     <div class="stats-section">
       <div class="games-section-header">
         <span class="games-count">{data.gamesTotal} game{data.gamesTotal === 1 ? "" : "s"}</span>
-        <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onCopyPgn, state)}>
-          Copy PGN
-        </button>
-        <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onExportPgn, state)}>
-          Download PGN
-        </button>
+        <div class="games-actions">
+          <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onCopyPgn, state)}>
+            Copy PGN
+          </button>
+          <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onExportPgn, state)}>
+            Download PGN
+          </button>
+        </div>
       </div>
-      <table class="stats-table games-table">
-        <thead>
-          <tr>
-            <th>Date</th><th>Opponent</th><th>Color</th><th>Result</th><th>Opening</th><th>Rating</th><th>Analysis</th>
-          </tr>
-        </thead>
-        <tbody>
-          {games.map(g => {
-            const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
-            const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
-            const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
-            return (
-              <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
-                <td>{formatDate(g.startTime)}</td>
-                <td>{opponent}</td>
-                <td>{g.userColor === "white" ? "♙ White" : "♟ Black"}</td>
-                <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
-                <td class="opening-cell">{g.opening || "—"}</td>
-                <td>{opponentRating}</td>
-                <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="stats-table games-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Opponent</th><th>Color</th><th>Result</th><th>Opening</th><th>Rating</th><th>Analysis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {games.map(g => {
+              const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
+              const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
+              const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
+              return (
+                <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
+                  <td>{formatDate(g.startTime)}</td>
+                  <td>{opponent}</td>
+                  <td>{g.userColor === "white" ? "♙ White" : "♟ Black"}</td>
+                  <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
+                  <td class="opening-cell">{g.opening || "—"}</td>
+                  <td>{opponentRating}</td>
+                  <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div class="games-cards">
+        {games.map(g => {
+          const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
+          const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
+          const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
+          return (
+            <div key={g.id} class="game-card" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
+              <div class="game-card-top">
+                <span>{formatDate(g.startTime)}</span>
+                <span>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</span>
+              </div>
+              <div class="game-card-opponent">vs {opponent} ({opponentRating})</div>
+              <div class="game-card-meta">
+                <span>{g.userColor === "white" ? "♙ White" : "♟ Black"}</span>
+                <span class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</span>
+              </div>
+              <div class="game-card-opening">{g.opening || "—"}</div>
+            </div>
+          );
+        })}
+      </div>
       {(showPrev || showNext) && (
         <div class="pagination">
           <button class="btn btn-secondary btn-sm" disabled={!showPrev || state.gamesLoading} onClick={vlens.cachePartial(onGamesPagePrev, state, data)}>← Previous</button>
