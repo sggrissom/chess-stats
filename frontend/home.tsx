@@ -1,6 +1,5 @@
 import * as preact from "preact";
 import * as rpc from "vlens/rpc";
-import * as core from "vlens/core";
 import * as auth from "./lib/authCache";
 import { ensureNoAuthInFetch } from "./lib/authHelpers";
 
@@ -20,7 +19,6 @@ export function view(
 ): preact.ComponentChild {
     const currentAuth = auth.getAuth();
     if (currentAuth && currentAuth.id > 0) {
-        core.setRoute("/dashboard");
         return null;
     }
 

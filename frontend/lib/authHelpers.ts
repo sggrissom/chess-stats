@@ -3,6 +3,13 @@ import * as rpc from "vlens/rpc";
 import * as auth from "./authCache";
 import * as server from "../server";
 
+function navigateIfNeeded(route: string) {
+  if (typeof window !== "undefined" && window.location.pathname === route) {
+    return;
+  }
+  core.setRoute(route);
+}
+
 /**
  * Attempts to refresh the authentication token using the refresh token cookie.
  * Returns the new auth context if successful, null otherwise.
@@ -44,7 +51,7 @@ export async function ensureAuthInFetch(): Promise<boolean> {
         return true;
       }
       auth.clearAuth();
-      core.setRoute("/login");
+      navigateIfNeeded("/login");
       return false;
     }
     return true;
@@ -64,7 +71,7 @@ export async function ensureAuthInFetch(): Promise<boolean> {
     }
 
     auth.clearAuth();
-    core.setRoute("/login");
+    navigateIfNeeded("/login");
     return false;
   } catch {
     const refreshedAuth = await tryRefreshAuth();
@@ -74,7 +81,7 @@ export async function ensureAuthInFetch(): Promise<boolean> {
     }
 
     auth.clearAuth();
-    core.setRoute("/login");
+    navigateIfNeeded("/login");
     return false;
   }
 }
@@ -86,7 +93,7 @@ export async function ensureAuthInFetch(): Promise<boolean> {
 export async function ensureNoAuthInFetch(): Promise<boolean> {
   const currentAuth = auth.getAuth();
   if (currentAuth && currentAuth.id > 0) {
-    core.setRoute("/dashboard");
+    navigateIfNeeded("/dashboard");
     return false;
   }
 
@@ -94,21 +101,21 @@ export async function ensureNoAuthInFetch(): Promise<boolean> {
     let [authResponse] = await server.GetAuthContext({});
     if (authResponse && authResponse.id > 0) {
       auth.setAuth(authResponse);
-      core.setRoute("/dashboard");
+      navigateIfNeeded("/dashboard");
       return false;
     }
 
     const refreshedAuth = await tryRefreshAuth();
     if (refreshedAuth) {
       auth.setAuth(refreshedAuth);
-      core.setRoute("/dashboard");
+      navigateIfNeeded("/dashboard");
       return false;
     }
   } catch {
     const refreshedAuth = await tryRefreshAuth();
     if (refreshedAuth) {
       auth.setAuth(refreshedAuth);
-      core.setRoute("/dashboard");
+      navigateIfNeeded("/dashboard");
       return false;
     }
   }
@@ -124,7 +131,7 @@ export function requireAuthInView(): auth.AuthCache | null {
   const currentAuth = auth.getAuth();
   if (!currentAuth || currentAuth.id <= 0) {
     auth.clearAuth();
-    core.setRoute("/login");
+    navigateIfNeeded("/login");
     return null;
   }
   return currentAuth;
