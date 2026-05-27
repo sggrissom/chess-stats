@@ -31,7 +31,7 @@ type MoveAnalysis struct {
 }
 
 func packMoveAnalysis(self *MoveAnalysis, buf *vpack.Buffer) {
-	vpack.Version(1, buf)
+	v := vpack.Version(2, buf)
 	vpack.Int(&self.MoveNumber, buf)
 	vpack.String(&self.Color, buf)
 	vpack.String(&self.MovePlayed, buf)
@@ -39,8 +39,10 @@ func packMoveAnalysis(self *MoveAnalysis, buf *vpack.Buffer) {
 	vpack.Int(&self.Evaluation, buf)
 	vpack.Bool(&self.IsMate, buf)
 	vpack.Int(&self.MateIn, buf)
-	vpack.Bool(&self.Brilliant, buf)
-	vpack.String(&self.BrilliantReason, buf)
+	if v >= 2 {
+		vpack.Bool(&self.Brilliant, buf)
+		vpack.String(&self.BrilliantReason, buf)
+	}
 }
 
 func packMoveAnalysisSlice(moves *[]MoveAnalysis, buf *vpack.Buffer) {
