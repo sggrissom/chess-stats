@@ -45,17 +45,6 @@ func packMoveAnalysis(self *MoveAnalysis, buf *vpack.Buffer) {
 	}
 }
 
-func packMoveAnalysisSlice(moves *[]MoveAnalysis, buf *vpack.Buffer) {
-	count := len(*moves)
-	vpack.Int(&count, buf)
-	if !buf.Writing {
-		*moves = make([]MoveAnalysis, count)
-	}
-	for i := range *moves {
-		packMoveAnalysis(&(*moves)[i], buf)
-	}
-}
-
 // GameAnalysis stores the full Stockfish analysis result for a game.
 type GameAnalysis struct {
 	GameId        string
@@ -75,7 +64,7 @@ func PackGameAnalysis(self *GameAnalysis, buf *vpack.Buffer) {
 	vpack.Int(&self.AnalysisDepth, buf)
 	vpack.Float64(&self.WhiteAccuracy, buf)
 	vpack.Float64(&self.BlackAccuracy, buf)
-	packMoveAnalysisSlice(&self.Moves, buf)
+	vpack.Slice(&self.Moves, packMoveAnalysis, buf)
 	vpack.String(&self.ErrorMessage, buf)
 	vpack.VInt64(&self.AnalyzedAt, buf)
 }
