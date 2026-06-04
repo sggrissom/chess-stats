@@ -83,12 +83,17 @@ export async function fetchStatsData(filter: GameFilter, data: StatsData) {
   data.savedGames = sg ?? null;
 }
 
-export async function loadRecentGames(state: FilterState & GamesState, data: GamesData) {
-  state.gamesLoading = true;
-  vlens.scheduleRedraw();
+function buildGamesFilter(state: FilterState & Partial<GamesState>): GameFilter {
   const filter = buildFilter(state);
   if (state.gamesSince) filter.since = state.gamesSince;
   if (state.gamesUntil) filter.until = state.gamesUntil;
+  return filter;
+}
+
+export async function loadRecentGames(state: FilterState & GamesState, data: GamesData) {
+  state.gamesLoading = true;
+  vlens.scheduleRedraw();
+  const filter = buildGamesFilter(state);
   const [resp] = await server.GetRecentGames({
     filter,
     limit: 50,
@@ -140,9 +145,9 @@ function totalColor(r: ColorRecord): number {
 
 // ─── Export PGN ───────────────────────────────────────────────────────────────
 
-export async function onExportPgn(state: FilterState, event: Event) {
+export async function onExportPgn(state: FilterState & Partial<GamesState>, event: Event) {
   event.preventDefault();
-  const [resp] = await server.ExportPgn({ filter: buildFilter(state) });
+  const [resp] = await server.ExportPgn({ filter: buildGamesFilter(state) });
   if (!resp || !resp.pgn) return;
   const blob = new Blob([resp.pgn], { type: "application/x-chess-pgn" });
   const url = URL.createObjectURL(blob);
@@ -155,9 +160,9 @@ export async function onExportPgn(state: FilterState, event: Event) {
   URL.revokeObjectURL(url);
 }
 
-export async function onCopyPgn(state: FilterState, event: Event) {
+export async function onCopyPgn(state: FilterState & Partial<GamesState>, event: Event) {
   event.preventDefault();
-  const [resp] = await server.ExportPgn({ filter: buildFilter(state) });
+  const [resp] = await server.ExportPgn({ filter: buildGamesFilter(state) });
   if (!resp || !resp.pgn) return;
   await navigator.clipboard.writeText(resp.pgn);
 }
