@@ -683,6 +683,27 @@ block(`
 `);
 
 block(`
+.record-subheading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 18px 0 6px;
+}
+`);
+
+block(`
+.record-row-note {
+  margin-top: 2px;
+  max-width: 520px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+`);
+
+block(`
 .stats-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
 `);
 

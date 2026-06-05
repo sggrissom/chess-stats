@@ -56,6 +56,7 @@ export interface GameFilter {
 export interface GetGameStatsResponse {
     overall: TimeClassRecord
     byClass: Record<string, TimeClassRecord>
+    taggedRecords: TaggedRecords
 }
 
 export interface GetOpeningStatsResponse {
@@ -180,6 +181,12 @@ export interface TimeClassRecord {
     wins: number
     losses: number
     draws: number
+}
+
+export interface TaggedRecords {
+    analyzedGames: number
+    gotWinningPosition: TimeClassRecord
+    opponentNeverHadWinningPosition: TimeClassRecord
 }
 
 export interface OpeningRecord {

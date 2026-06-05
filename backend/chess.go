@@ -135,9 +135,16 @@ type TimeClassRecord struct {
 	Draws  int `json:"draws"`
 }
 
+type TaggedRecords struct {
+	AnalyzedGames                   int             `json:"analyzedGames"`
+	GotWinningPosition              TimeClassRecord `json:"gotWinningPosition"`
+	OpponentNeverHadWinningPosition TimeClassRecord `json:"opponentNeverHadWinningPosition"`
+}
+
 type GetGameStatsResponse struct {
-	Overall TimeClassRecord            `json:"overall"`
-	ByClass map[string]TimeClassRecord `json:"byClass"`
+	Overall       TimeClassRecord            `json:"overall"`
+	ByClass       map[string]TimeClassRecord `json:"byClass"`
+	TaggedRecords TaggedRecords              `json:"taggedRecords"`
 }
 
 type GameFilter struct {
@@ -658,23 +665,56 @@ func GetGameStats(ctx *vbeam.Context, req GameFilter) (resp GetGameStatsResponse
 		if !gameMatchesFilter(&game, req) {
 			return true
 		}
-		update := func(r *TimeClassRecord) {
-			switch game.Result {
-			case "win":
-				r.Wins++
-			case "loss":
-				r.Losses++
-			default:
-				r.Draws++
+		updateRecord(&resp.Overall, game.Result)
+		tc := resp.ByClass[game.TimeClass]
+		updateRecord(&tc, game.Result)
+		resp.ByClass[game.TimeClass] = tc
+
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
+			var analysis GameAnalysis
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
+			if analysis.Status == AnalysisStatusDone {
+				tagRes := TagGameFromEvals(gameOutcomeForUserGame(game), analysis.Moves, DefaultGameTagThresholds())
+				userHadWin := hadWinningPositionTag(tagRes.Tags, game.UserColor)
+				opponentHadWin := hadWinningPositionTag(tagRes.Tags, oppositeColor(game.UserColor))
+
+				resp.TaggedRecords.AnalyzedGames++
+				if userHadWin {
+					updateRecord(&resp.TaggedRecords.GotWinningPosition, game.Result)
+				}
+				if !opponentHadWin {
+					updateRecord(&resp.TaggedRecords.OpponentNeverHadWinningPosition, game.Result)
+				}
 			}
 		}
-		update(&resp.Overall)
-		tc := resp.ByClass[game.TimeClass]
-		update(&tc)
-		resp.ByClass[game.TimeClass] = tc
 		return true
 	})
 	return
+}
+
+func updateRecord(r *TimeClassRecord, result string) {
+	switch result {
+	case "win":
+		r.Wins++
+	case "loss":
+		r.Losses++
+	default:
+		r.Draws++
+	}
+}
+
+func oppositeColor(color string) string {
+	if color == "white" {
+		return "black"
+	}
+	return "white"
+}
+
+func hadWinningPositionTag(tags []string, color string) bool {
+	if color == "white" {
+		return hasGameTag(tags, string(TagWhiteHadWin))
+	}
+	return hasGameTag(tags, string(TagBlackHadWin))
 }
 
 type FrequentOpponentRecord struct {

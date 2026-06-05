@@ -258,6 +258,28 @@ async function onOpeningExplorerPage(state: OpeningsState, filter: GameFilter, k
 
 type RecordLike = { wins: number; losses: number; draws: number };
 
+
+function totalRecord(r: RecordLike): number {
+  return r.wins + r.losses + r.draws;
+}
+
+function TaggedRecordRow({ label, r, note }: { label: string; r: RecordLike; note: string }) {
+  const total = totalRecord(r);
+  return (
+    <tr>
+      <td>
+        <strong>{label}</strong>
+        <div class="record-row-note">{note}</div>
+      </td>
+      <td>{r.wins}</td>
+      <td>{r.losses}</td>
+      <td>{r.draws}</td>
+      <td>{winPct(r)}</td>
+      <td>{total}</td>
+    </tr>
+  );
+}
+
 function RecordRow({ label, r, prev }: { label: string; r: RecordLike; prev?: RecordLike | null }) {
   const currPct = winPctNum(r);
   const prevPct = prev != null ? winPctNum(prev) : null;
@@ -662,6 +684,29 @@ export function StatsSection({ stats, comparisonStats, comparisonLabel, ratingHi
               ))}
             </tbody>
           </table>
+          {stats.taggedRecords && stats.taggedRecords.analyzedGames > 0 && (
+            <>
+              <h4 class="record-subheading">Tagged Records</h4>
+              <p class="section-subtitle">Based on {stats.taggedRecords.analyzedGames} analyzed game{stats.taggedRecords.analyzedGames === 1 ? "" : "s"} in the current filter.</p>
+              <table class="stats-table">
+                <thead>
+                  <tr><th></th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  <TaggedRecordRow
+                    label="Got a winning position"
+                    note="Games where your color received the existing HadWin tag, regardless of final result."
+                    r={stats.taggedRecords.gotWinningPosition}
+                  />
+                  <TaggedRecordRow
+                    label="Opponent never had a winning position"
+                    note="Games where the opponent's color did not receive a HadWin tag."
+                    r={stats.taggedRecords.opponentNeverHadWinningPosition}
+                  />
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       )}
       <GameExtremeSection
