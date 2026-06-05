@@ -22,6 +22,7 @@ const useState = vlens.declareHook((): State => ({
   gamesLoading: false,
   gamesSince: 0,
   gamesUntil: 0,
+  brilliantOnly: false,
   initialized: false,
 }));
 
@@ -134,7 +135,7 @@ export async function fetch(route: string, prefix: string) {
     since,
     until,
   };
-  const [resp] = await server.GetRecentGames({ filter, limit: 50, offset: 0 });
+  const [resp] = await server.GetRecentGames({ filter, limit: 50, offset: 0, brilliantOnly: false });
   const data: Data = { recentGames: resp?.games ?? [], gamesTotal: resp?.total ?? 0 };
   _data = data;
   return rpc.ok(data);

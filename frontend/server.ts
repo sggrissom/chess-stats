@@ -66,6 +66,7 @@ export interface GetRecentGamesRequest {
     filter: GameFilter
     limit: number
     offset: number
+    brilliantOnly: boolean
 }
 
 export interface GetRecentGamesResponse {
@@ -204,6 +205,7 @@ export interface RecentGameItem {
     analysisStatus: number
     whiteAccuracy: number
     blackAccuracy: number
+    hasBrilliant: boolean
 }
 
 export interface MoveAnalysisItem {
@@ -216,6 +218,8 @@ export interface MoveAnalysisItem {
     mateIn: number
     accuracy: number
     moveQuality: string
+    brilliant: boolean
+    brilliantReason: string
 }
 
 export interface RatingPoint {

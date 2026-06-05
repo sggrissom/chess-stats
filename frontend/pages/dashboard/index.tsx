@@ -304,7 +304,7 @@ export async function fetch(route: string, prefix: string) {
       server.GetOpeningStats(allTimeFilter),
       server.GetRatingHistory(allTimeFilter),
       server.GetStreaks({}),
-      server.GetRecentGames({ filter: allTimeFilter, limit: 10, offset: 0 }),
+      server.GetRecentGames({ filter: allTimeFilter, limit: 10, offset: 0, brilliantOnly: false }),
     ]);
     data.stats = s ?? null;
     data.openingStats = os ?? null;

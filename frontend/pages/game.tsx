@@ -159,6 +159,7 @@ function accuracyClass(acc: number): string {
 }
 
 function moveQualityClass(q: string): string {
+  if (q === "brilliant") return "move-brilliant";
   if (q === "blunder") return "move-blunder";
   if (q === "mistake") return "move-mistake";
   if (q === "inaccuracy") return "move-inaccuracy";
@@ -167,6 +168,7 @@ function moveQualityClass(q: string): string {
 }
 
 function moveQualitySymbol(q: string): string {
+  if (q === "brilliant") return "!!";
   if (q === "blunder") return "??";
   if (q === "mistake") return "?";
   if (q === "inaccuracy") return "?!";
@@ -200,15 +202,17 @@ function computeCriticalPly(moves: MoveAnalysisItem[]): number | null {
 }
 
 function MoveQualitySummary({ moves }: { moves: MoveAnalysisItem[] }) {
-  let wb = 0, wm = 0, wi = 0;
-  let bb = 0, bm = 0, bi = 0;
+  let wbr = 0, wb = 0, wm = 0, wi = 0;
+  let bbr = 0, bb = 0, bm = 0, bi = 0;
   for (const m of moves) {
     if (m.color === "white") {
-      if (m.moveQuality === "blunder") wb++;
+      if (m.moveQuality === "brilliant") wbr++;
+      else if (m.moveQuality === "blunder") wb++;
       else if (m.moveQuality === "mistake") wm++;
       else if (m.moveQuality === "inaccuracy") wi++;
     } else {
-      if (m.moveQuality === "blunder") bb++;
+      if (m.moveQuality === "brilliant") bbr++;
+      else if (m.moveQuality === "blunder") bb++;
       else if (m.moveQuality === "mistake") bm++;
       else if (m.moveQuality === "inaccuracy") bi++;
     }
@@ -219,6 +223,7 @@ function MoveQualitySummary({ moves }: { moves: MoveAnalysisItem[] }) {
         <thead>
           <tr>
             <th></th>
+            <th class="quality-brilliant-count">Brilliants</th>
             <th class="quality-blunder-count">Blunders</th>
             <th class="quality-mistake-count">Mistakes</th>
             <th class="quality-inaccuracy-count">Inaccuracies</th>
@@ -227,12 +232,14 @@ function MoveQualitySummary({ moves }: { moves: MoveAnalysisItem[] }) {
         <tbody>
           <tr>
             <td class="quality-color-label">White</td>
+            <td class="quality-brilliant-count">{wbr}</td>
             <td class="quality-blunder-count">{wb}</td>
             <td class="quality-mistake-count">{wm}</td>
             <td class="quality-inaccuracy-count">{wi}</td>
           </tr>
           <tr>
             <td class="quality-color-label">Black</td>
+            <td class="quality-brilliant-count">{bbr}</td>
             <td class="quality-blunder-count">{bb}</td>
             <td class="quality-mistake-count">{bm}</td>
             <td class="quality-inaccuracy-count">{bi}</td>
