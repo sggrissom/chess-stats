@@ -245,12 +245,14 @@ type RecentGameItem struct {
 	AnalysisStatus int     `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
 	WhiteAccuracy  float64 `json:"whiteAccuracy"`
 	BlackAccuracy  float64 `json:"blackAccuracy"`
+	HasBrilliant   bool    `json:"hasBrilliant"`
 }
 
 type GetRecentGamesRequest struct {
-	Filter GameFilter `json:"filter"`
-	Limit  int        `json:"limit"`  // 0 = default 50
-	Offset int        `json:"offset"` // for pagination
+	Filter        GameFilter `json:"filter"`
+	Limit         int        `json:"limit"`  // 0 = default 50
+	Offset        int        `json:"offset"` // for pagination
+	BrilliantOnly bool       `json:"brilliantOnly"`
 }
 
 type GetRecentGamesResponse struct {
@@ -272,15 +274,17 @@ type GetGameDetailRequest struct {
 }
 
 type MoveAnalysisItem struct {
-	MoveNumber  int     `json:"moveNumber"`
-	Color       string  `json:"color"`
-	MovePlayed  string  `json:"movePlayed"` // SAN when convertible, UCI fallback
-	BestMove    string  `json:"bestMove"`   // SAN when convertible, UCI fallback
-	Evaluation  int     `json:"evaluation"` // centipawns, white-positive
-	IsMate      bool    `json:"isMate"`
-	MateIn      int     `json:"mateIn"`
-	Accuracy    float64 `json:"accuracy"`    // per-move accuracy 0–100; -1 for first move (no prior position)
-	MoveQuality string  `json:"moveQuality"` // "best"|"excellent"|"good"|"inaccuracy"|"mistake"|"blunder"|""
+	MoveNumber      int     `json:"moveNumber"`
+	Color           string  `json:"color"`
+	MovePlayed      string  `json:"movePlayed"` // SAN when convertible, UCI fallback
+	BestMove        string  `json:"bestMove"`   // SAN when convertible, UCI fallback
+	Evaluation      int     `json:"evaluation"` // centipawns, white-positive
+	IsMate          bool    `json:"isMate"`
+	MateIn          int     `json:"mateIn"`
+	Accuracy        float64 `json:"accuracy"`    // per-move accuracy 0–100; -1 for first move (no prior position)
+	MoveQuality     string  `json:"moveQuality"` // "brilliant"|"best"|"excellent"|"good"|"inaccuracy"|"mistake"|"blunder"|""
+	Brilliant       bool    `json:"brilliant"`
+	BrilliantReason string  `json:"brilliantReason"`
 }
 
 type GetGameDetailResponse struct {
@@ -1012,14 +1016,14 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 		status := AnalysisStatusNone
 		whiteAccuracy := 0.0
 		blackAccuracy := 0.0
+		var analysis GameAnalysis
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, m.game.Id) {
-			var analysis GameAnalysis
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, m.game.Id, &analysis)
 			status = analysis.Status
 			whiteAccuracy = analysis.WhiteAccuracy
 			blackAccuracy = analysis.BlackAccuracy
 		}
-		resp.Games[i] = gameToRecentItem(m.game, m.opening, status, whiteAccuracy, blackAccuracy)
+		resp.Games[i] = gameToRecentItem(m.game, m.opening, status, whiteAccuracy, blackAccuracy, hasBrilliantMove(analysis.Moves))
 	}
 	return
 }
@@ -1542,7 +1546,7 @@ func normalizeResult(r string) string {
 	}
 }
 
-func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int, whiteAccuracy float64, blackAccuracy float64) RecentGameItem {
+func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int, whiteAccuracy float64, blackAccuracy float64, hasBrilliant bool) RecentGameItem {
 	return RecentGameItem{
 		Id:             g.Id,
 		WhiteUsername:  g.WhiteUsername,
@@ -1559,7 +1563,17 @@ func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int, whiteAccu
 		AnalysisStatus: analysisStatus,
 		WhiteAccuracy:  whiteAccuracy,
 		BlackAccuracy:  blackAccuracy,
+		HasBrilliant:   hasBrilliant,
 	}
+}
+
+func hasBrilliantMove(moves []MoveAnalysis) bool {
+	for _, m := range moves {
+		if m.Brilliant {
+			return true
+		}
+	}
+	return false
 }
 
 func GetRatingHistory(ctx *vbeam.Context, req GameFilter) (resp GetRatingHistoryResponse, err error) {
@@ -1609,9 +1623,20 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
 		var g Game
 		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
-		if gameMatchesFilter(&g, req.Filter) {
-			games = append(games, g)
+		if !gameMatchesFilter(&g, req.Filter) {
+			return true
 		}
+		if req.BrilliantOnly {
+			var analysis GameAnalysis
+			if !vbolt.HasKey(ctx.Tx, GameAnalysisBkt, g.Id) {
+				return true
+			}
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, g.Id, &analysis)
+			if analysis.Status != AnalysisStatusDone || !hasBrilliantMove(analysis.Moves) {
+				return true
+			}
+		}
+		games = append(games, g)
 		return true
 	})
 
@@ -1639,14 +1664,14 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 		status := AnalysisStatusNone
 		whiteAccuracy := 0.0
 		blackAccuracy := 0.0
+		var analysis GameAnalysis
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, g.Id) {
-			var analysis GameAnalysis
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, g.Id, &analysis)
 			status = analysis.Status
 			whiteAccuracy = analysis.WhiteAccuracy
 			blackAccuracy = analysis.BlackAccuracy
 		}
-		resp.Games[i] = gameToRecentItem(g, opening, status, whiteAccuracy, blackAccuracy)
+		resp.Games[i] = gameToRecentItem(g, opening, status, whiteAccuracy, blackAccuracy, hasBrilliantMove(analysis.Moves))
 	}
 	return
 }
@@ -1717,7 +1742,7 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 		status = analysis.Status
 	}
 
-	resp.Game = gameToRecentItem(g, opening, status, analysis.WhiteAccuracy, analysis.BlackAccuracy)
+	resp.Game = gameToRecentItem(g, opening, status, analysis.WhiteAccuracy, analysis.BlackAccuracy, hasBrilliantMove(analysis.Moves))
 	resp.Pgn = pgn
 	if pgn != "" {
 		pgnReader := strings.NewReader(pgn)
@@ -1930,14 +1955,16 @@ func convertMovesToSAN(pgn string, moves []MoveAnalysis) []MoveAnalysisItem {
 	items := make([]MoveAnalysisItem, len(moves))
 	for i, m := range moves {
 		item := MoveAnalysisItem{
-			MoveNumber: m.MoveNumber,
-			Color:      m.Color,
-			MovePlayed: m.MovePlayed,
-			BestMove:   m.BestMove,
-			Evaluation: m.Evaluation,
-			IsMate:     m.IsMate,
-			MateIn:     m.MateIn,
-			Accuracy:   -1, // first move has no prior position
+			MoveNumber:      m.MoveNumber,
+			Color:           m.Color,
+			MovePlayed:      m.MovePlayed,
+			BestMove:        m.BestMove,
+			Evaluation:      m.Evaluation,
+			IsMate:          m.IsMate,
+			MateIn:          m.MateIn,
+			Accuracy:        -1, // first move has no prior position
+			Brilliant:       m.Brilliant,
+			BrilliantReason: m.BrilliantReason,
 		}
 
 		// Convert MovePlayed to SAN using the stored game move at this ply
@@ -1966,6 +1993,9 @@ func convertMovesToSAN(pgn string, moves []MoveAnalysis) []MoveAnalysisItem {
 				prev.MateIn, m.MateIn,
 				prev.Color, prev.MovePlayed, prev.BestMove,
 			)
+			if prev.Brilliant {
+				qual = "brilliant"
+			}
 			items[i-1].Accuracy = acc
 			items[i-1].MoveQuality = qual
 		}
@@ -1982,15 +2012,17 @@ func uciMoveItems(moves []MoveAnalysis) []MoveAnalysisItem {
 	items := make([]MoveAnalysisItem, len(moves))
 	for i, m := range moves {
 		items[i] = MoveAnalysisItem{
-			MoveNumber:  m.MoveNumber,
-			Color:       m.Color,
-			MovePlayed:  m.MovePlayed,
-			BestMove:    m.BestMove,
-			Evaluation:  m.Evaluation,
-			IsMate:      m.IsMate,
-			MateIn:      m.MateIn,
-			Accuracy:    -1,
-			MoveQuality: "",
+			MoveNumber:      m.MoveNumber,
+			Color:           m.Color,
+			MovePlayed:      m.MovePlayed,
+			BestMove:        m.BestMove,
+			Evaluation:      m.Evaluation,
+			IsMate:          m.IsMate,
+			MateIn:          m.MateIn,
+			Accuracy:        -1,
+			MoveQuality:     "",
+			Brilliant:       m.Brilliant,
+			BrilliantReason: m.BrilliantReason,
 		}
 		if i > 0 {
 			prev := moves[i-1]
@@ -2000,6 +2032,9 @@ func uciMoveItems(moves []MoveAnalysis) []MoveAnalysisItem {
 				prev.MateIn, m.MateIn,
 				prev.Color, prev.MovePlayed, prev.BestMove,
 			)
+			if prev.Brilliant {
+				qual = "brilliant"
+			}
 			items[i-1].Accuracy = acc
 			items[i-1].MoveQuality = qual
 		}

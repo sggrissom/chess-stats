@@ -31,6 +31,7 @@ export interface GamesState {
   gamesLoading: boolean;
   gamesSince: number;
   gamesUntil: number;
+  brilliantOnly: boolean;
 }
 
 export interface StatsData {
@@ -98,6 +99,7 @@ export async function loadRecentGames(state: FilterState & GamesState, data: Gam
     filter,
     limit: 50,
     offset: state.gamesOffset,
+    brilliantOnly: state.brilliantOnly,
   });
   data.recentGames = resp?.games ?? [];
   data.gamesTotal = resp?.total ?? 0;
@@ -179,6 +181,13 @@ export async function onGamesPagePrev(state: FilterState & GamesState, data: Gam
 export async function onGamesPageNext(state: FilterState & GamesState, data: GamesData, event: Event) {
   event.preventDefault();
   state.gamesOffset += 50;
+  await loadRecentGames(state, data);
+}
+
+export async function onToggleBrilliantOnly(state: FilterState & GamesState, data: GamesData, event: Event) {
+  event.preventDefault();
+  state.brilliantOnly = !state.brilliantOnly;
+  state.gamesOffset = 0;
   await loadRecentGames(state, data);
 }
 
@@ -797,7 +806,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
         {!loading && games.length > 0 && (
           <table class="stats-table games-table opening-explorer-table">
             <thead>
-              <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Analysis</th></tr>
+              <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Analysis</th><th>Brilliant</th></tr>
             </thead>
             <tbody>
               {games.map(g => {
@@ -811,6 +820,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                     <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
                     <td>{opponentRating}</td>
                     <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
+                    <td>{g.hasBrilliant ? <span class="brilliant-chip" title="Brilliant move found">✨</span> : <span class="muted-cell">—</span>}</td>
                   </tr>
                 );
               })}
@@ -985,6 +995,13 @@ export function RecentGamesSection({ data, state }: {
       <div class="games-section-header">
         <span class="games-count">{data.gamesTotal} game{data.gamesTotal === 1 ? "" : "s"}</span>
         <div class="games-actions">
+          <button
+            class={"btn btn-secondary btn-sm" + (state.brilliantOnly ? " active" : "")}
+            title="Show analyzed games where our brilliant-move detector found at least one move"
+            onClick={vlens.cachePartial(onToggleBrilliantOnly, state, data)}
+          >
+            ✨ Brilliant only
+          </button>
           <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onCopyPgn, state)}>
             Copy PGN
           </button>
@@ -997,7 +1014,7 @@ export function RecentGamesSection({ data, state }: {
         <table class="stats-table games-table">
           <thead>
             <tr>
-              <th>Date</th><th>Opponent</th><th>Color</th><th>Result</th><th>Opening</th><th>Rating</th><th>Analysis</th>
+              <th>Date</th><th>Opponent</th><th>Color</th><th>Result</th><th>Opening</th><th>Rating</th><th>Analysis</th><th>Brilliant</th>
             </tr>
           </thead>
           <tbody>
@@ -1014,6 +1031,7 @@ export function RecentGamesSection({ data, state }: {
                   <td class="opening-cell">{g.opening || "—"}</td>
                   <td>{opponentRating}</td>
                   <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
+                  <td>{g.hasBrilliant ? <span class="brilliant-chip" title="Brilliant move found">✨</span> : <span class="muted-cell">—</span>}</td>
                 </tr>
               );
             })}
@@ -1029,7 +1047,10 @@ export function RecentGamesSection({ data, state }: {
             <div key={g.id} class="game-card" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
               <div class="game-card-top">
                 <span>{formatDate(g.startTime)}</span>
-                <span>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</span>
+                <span>
+                  {analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}
+                  {g.hasBrilliant && <span class="brilliant-chip" title="Brilliant move found">✨</span>}
+                </span>
               </div>
               <div class="game-card-opponent">vs {opponent} ({opponentRating})</div>
               <div class="game-card-meta">
