@@ -7,7 +7,7 @@ import {
   GameFilter, RecentGameItem, GetRatingHistoryResponse, RatingPoint, GetWinRateTrendResponse,
   WinRateBucket, GetAccuracyTrendResponse, GetFrequentOpponentsResponse,
   FrequentOpponentRecord, OpeningGamesAggregate, GetStreaksResponse,
-  MissedWinGame, GetMissedWinsResponse, GetSavedGamesResponse,
+  MissedWinGame, GetMissedWinsResponse, GetSavedGamesResponse, BinaryPositionRecord,
 } from "../server";
 import { ANALYSIS_NONE, ANALYSIS_PENDING, ANALYSIS_ANALYZING, ANALYSIS_DONE, ANALYSIS_FAILED } from "./analysisStatus";
 import { buildFilter } from "./filterBar";
@@ -259,23 +259,27 @@ async function onOpeningExplorerPage(state: OpeningsState, filter: GameFilter, k
 type RecordLike = { wins: number; losses: number; draws: number };
 
 
-function totalRecord(r: RecordLike): number {
-  return r.wins + r.losses + r.draws;
+function binaryPct(r: BinaryPositionRecord): string {
+  const total = r.yes + r.no;
+  if (total === 0) return "0%";
+  return Math.round((r.yes / total) * 100) + "%";
 }
 
-function TaggedRecordRow({ label, r, note }: { label: string; r: RecordLike; note: string }) {
-  const total = totalRecord(r);
+function totalBinaryRecord(r: BinaryPositionRecord): number {
+  return r.yes + r.no;
+}
+
+function BinaryPositionRecordRow({ label, r, note }: { label: string; r: BinaryPositionRecord; note: string }) {
   return (
     <tr>
       <td>
         <strong>{label}</strong>
         <div class="record-row-note">{note}</div>
       </td>
-      <td>{r.wins}</td>
-      <td>{r.losses}</td>
-      <td>{r.draws}</td>
-      <td>{winPct(r)}</td>
-      <td>{total}</td>
+      <td>{r.yes}</td>
+      <td>{r.no}</td>
+      <td>{binaryPct(r)}</td>
+      <td>{totalBinaryRecord(r)}</td>
     </tr>
   );
 }
@@ -687,37 +691,20 @@ export function StatsSection({ stats, comparisonStats, comparisonLabel, ratingHi
           {stats.taggedRecords && stats.taggedRecords.analyzedGames > 0 && (
             <>
               <h4 class="record-subheading">Winning Position Records</h4>
-              <p class="section-subtitle">Based on {stats.taggedRecords.analyzedGames} analyzed game{stats.taggedRecords.analyzedGames === 1 ? "" : "s"} in the current filter. D means the game ended in a draw, so neither player won.</p>
+              <p class="section-subtitle">Based on {stats.taggedRecords.analyzedGames} analyzed game{stats.taggedRecords.analyzedGames === 1 ? "" : "s"} in the current filter. These are binary position records, so draws are not split into separate result buckets.</p>
               <table class="stats-table">
                 <thead>
-                  <tr><th>Your position</th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Total</th></tr>
+                  <tr><th>Position record</th><th>Yes</th><th>No</th><th>Yes%</th><th>Total</th></tr>
                 </thead>
                 <tbody>
-                  <TaggedRecordRow
-                    label="You had a winning position"
-                    note="Games where your color received a HadWin tag, regardless of final result."
-                    r={stats.taggedRecords.userHadWinningPosition}
+                  <BinaryPositionRecordRow
+                    label="Had a winning position"
+                    note="Whether your color received a HadWin tag."
+                    r={stats.taggedRecords.hadWinningPosition}
                   />
-                  <TaggedRecordRow
-                    label="You never had a winning position"
-                    note="Analyzed games where your color did not receive a HadWin tag."
-                    r={stats.taggedRecords.userNeverHadWinningPosition}
-                  />
-                </tbody>
-              </table>
-              <table class="stats-table">
-                <thead>
-                  <tr><th>Opponent position</th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Total</th></tr>
-                </thead>
-                <tbody>
-                  <TaggedRecordRow
-                    label="Opponent had a winning position"
-                    note="Games where the opponent's color received a HadWin tag, regardless of final result."
-                    r={stats.taggedRecords.opponentHadWinningPosition}
-                  />
-                  <TaggedRecordRow
+                  <BinaryPositionRecordRow
                     label="Opponent never had a winning position"
-                    note="Analyzed games where the opponent's color did not receive a HadWin tag."
+                    note="Whether the opponent's color did not receive a HadWin tag."
                     r={stats.taggedRecords.opponentNeverHadWinningPosition}
                   />
                 </tbody>

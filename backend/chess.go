@@ -135,13 +135,15 @@ type TimeClassRecord struct {
 	Draws  int `json:"draws"`
 }
 
+type BinaryPositionRecord struct {
+	Yes int `json:"yes"`
+	No  int `json:"no"`
+}
+
 type TaggedRecords struct {
-	AnalyzedGames                   int             `json:"analyzedGames"`
-	GotWinningPosition              TimeClassRecord `json:"gotWinningPosition"`
-	UserHadWinningPosition          TimeClassRecord `json:"userHadWinningPosition"`
-	UserNeverHadWinningPosition     TimeClassRecord `json:"userNeverHadWinningPosition"`
-	OpponentHadWinningPosition      TimeClassRecord `json:"opponentHadWinningPosition"`
-	OpponentNeverHadWinningPosition TimeClassRecord `json:"opponentNeverHadWinningPosition"`
+	AnalyzedGames                   int                  `json:"analyzedGames"`
+	HadWinningPosition              BinaryPositionRecord `json:"hadWinningPosition"`
+	OpponentNeverHadWinningPosition BinaryPositionRecord `json:"opponentNeverHadWinningPosition"`
 }
 
 type GetGameStatsResponse struct {
@@ -689,18 +691,17 @@ func GetGameStats(ctx *vbeam.Context, req GameFilter) (resp GetGameStatsResponse
 	return
 }
 
-func recordTaggedPositionResult(r *TaggedRecords, result string, userHadWin bool, opponentHadWin bool) {
+func recordTaggedPositionResult(r *TaggedRecords, _ string, userHadWin bool, opponentHadWin bool) {
 	r.AnalyzedGames++
-	if userHadWin {
-		updateRecord(&r.GotWinningPosition, result)
-		updateRecord(&r.UserHadWinningPosition, result)
+	updateBinaryPositionRecord(&r.HadWinningPosition, userHadWin)
+	updateBinaryPositionRecord(&r.OpponentNeverHadWinningPosition, !opponentHadWin)
+}
+
+func updateBinaryPositionRecord(r *BinaryPositionRecord, yes bool) {
+	if yes {
+		r.Yes++
 	} else {
-		updateRecord(&r.UserNeverHadWinningPosition, result)
-	}
-	if opponentHadWin {
-		updateRecord(&r.OpponentHadWinningPosition, result)
-	} else {
-		updateRecord(&r.OpponentNeverHadWinningPosition, result)
+		r.No++
 	}
 }
 

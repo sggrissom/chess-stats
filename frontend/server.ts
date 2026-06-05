@@ -183,13 +183,15 @@ export interface TimeClassRecord {
     draws: number
 }
 
+export interface BinaryPositionRecord {
+    yes: number
+    no: number
+}
+
 export interface TaggedRecords {
     analyzedGames: number
-    gotWinningPosition: TimeClassRecord
-    userHadWinningPosition: TimeClassRecord
-    userNeverHadWinningPosition: TimeClassRecord
-    opponentHadWinningPosition: TimeClassRecord
-    opponentNeverHadWinningPosition: TimeClassRecord
+    hadWinningPosition: BinaryPositionRecord
+    opponentNeverHadWinningPosition: BinaryPositionRecord
 }
 
 export interface OpeningRecord {
