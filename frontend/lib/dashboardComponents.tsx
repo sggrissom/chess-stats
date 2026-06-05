@@ -686,21 +686,38 @@ export function StatsSection({ stats, comparisonStats, comparisonLabel, ratingHi
           </table>
           {stats.taggedRecords && stats.taggedRecords.analyzedGames > 0 && (
             <>
-              <h4 class="record-subheading">Tagged Records</h4>
-              <p class="section-subtitle">Based on {stats.taggedRecords.analyzedGames} analyzed game{stats.taggedRecords.analyzedGames === 1 ? "" : "s"} in the current filter.</p>
+              <h4 class="record-subheading">Winning Position Records</h4>
+              <p class="section-subtitle">Based on {stats.taggedRecords.analyzedGames} analyzed game{stats.taggedRecords.analyzedGames === 1 ? "" : "s"} in the current filter. D means the game ended in a draw, so neither player won.</p>
               <table class="stats-table">
                 <thead>
-                  <tr><th></th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Total</th></tr>
+                  <tr><th>Your position</th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Total</th></tr>
                 </thead>
                 <tbody>
                   <TaggedRecordRow
-                    label="Got a winning position"
-                    note="Games where your color received the existing HadWin tag, regardless of final result."
-                    r={stats.taggedRecords.gotWinningPosition}
+                    label="You had a winning position"
+                    note="Games where your color received a HadWin tag, regardless of final result."
+                    r={stats.taggedRecords.userHadWinningPosition}
+                  />
+                  <TaggedRecordRow
+                    label="You never had a winning position"
+                    note="Analyzed games where your color did not receive a HadWin tag."
+                    r={stats.taggedRecords.userNeverHadWinningPosition}
+                  />
+                </tbody>
+              </table>
+              <table class="stats-table">
+                <thead>
+                  <tr><th>Opponent position</th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  <TaggedRecordRow
+                    label="Opponent had a winning position"
+                    note="Games where the opponent's color received a HadWin tag, regardless of final result."
+                    r={stats.taggedRecords.opponentHadWinningPosition}
                   />
                   <TaggedRecordRow
                     label="Opponent never had a winning position"
-                    note="Games where the opponent's color did not receive a HadWin tag."
+                    note="Analyzed games where the opponent's color did not receive a HadWin tag."
                     r={stats.taggedRecords.opponentNeverHadWinningPosition}
                   />
                 </tbody>

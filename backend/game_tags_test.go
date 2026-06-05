@@ -108,3 +108,30 @@ func TestTagGameNoComebackFromSmallLead(t *testing.T) {
 		t.Fatalf("should not tag small-advantage game as comeback/back-and-forth: %+v", res.Tags)
 	}
 }
+
+func TestRecordTaggedPositionResultIncludesBothSides(t *testing.T) {
+	var records TaggedRecords
+	recordTaggedPositionResult(&records, "win", true, false)
+	recordTaggedPositionResult(&records, "loss", false, true)
+	recordTaggedPositionResult(&records, "draw", false, false)
+
+	if records.AnalyzedGames != 3 {
+		t.Fatalf("expected every analyzed game to be counted, got %d", records.AnalyzedGames)
+	}
+	if totalTimeClassRecord(records.UserHadWinningPosition)+totalTimeClassRecord(records.UserNeverHadWinningPosition) != records.AnalyzedGames {
+		t.Fatalf("expected user winning-position rows to include all games: %+v", records)
+	}
+	if totalTimeClassRecord(records.OpponentHadWinningPosition)+totalTimeClassRecord(records.OpponentNeverHadWinningPosition) != records.AnalyzedGames {
+		t.Fatalf("expected opponent winning-position rows to include all games: %+v", records)
+	}
+	if records.UserHadWinningPosition.Wins != 1 || records.UserNeverHadWinningPosition.Losses != 1 || records.UserNeverHadWinningPosition.Draws != 1 {
+		t.Fatalf("unexpected user-side record split: %+v", records)
+	}
+	if records.OpponentHadWinningPosition.Losses != 1 || records.OpponentNeverHadWinningPosition.Wins != 1 || records.OpponentNeverHadWinningPosition.Draws != 1 {
+		t.Fatalf("unexpected opponent-side record split: %+v", records)
+	}
+}
+
+func totalTimeClassRecord(r TimeClassRecord) int {
+	return r.Wins + r.Losses + r.Draws
+}

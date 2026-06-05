@@ -138,6 +138,9 @@ type TimeClassRecord struct {
 type TaggedRecords struct {
 	AnalyzedGames                   int             `json:"analyzedGames"`
 	GotWinningPosition              TimeClassRecord `json:"gotWinningPosition"`
+	UserHadWinningPosition          TimeClassRecord `json:"userHadWinningPosition"`
+	UserNeverHadWinningPosition     TimeClassRecord `json:"userNeverHadWinningPosition"`
+	OpponentHadWinningPosition      TimeClassRecord `json:"opponentHadWinningPosition"`
 	OpponentNeverHadWinningPosition TimeClassRecord `json:"opponentNeverHadWinningPosition"`
 }
 
@@ -678,18 +681,27 @@ func GetGameStats(ctx *vbeam.Context, req GameFilter) (resp GetGameStatsResponse
 				userHadWin := hadWinningPositionTag(tagRes.Tags, game.UserColor)
 				opponentHadWin := hadWinningPositionTag(tagRes.Tags, oppositeColor(game.UserColor))
 
-				resp.TaggedRecords.AnalyzedGames++
-				if userHadWin {
-					updateRecord(&resp.TaggedRecords.GotWinningPosition, game.Result)
-				}
-				if !opponentHadWin {
-					updateRecord(&resp.TaggedRecords.OpponentNeverHadWinningPosition, game.Result)
-				}
+				recordTaggedPositionResult(&resp.TaggedRecords, game.Result, userHadWin, opponentHadWin)
 			}
 		}
 		return true
 	})
 	return
+}
+
+func recordTaggedPositionResult(r *TaggedRecords, result string, userHadWin bool, opponentHadWin bool) {
+	r.AnalyzedGames++
+	if userHadWin {
+		updateRecord(&r.GotWinningPosition, result)
+		updateRecord(&r.UserHadWinningPosition, result)
+	} else {
+		updateRecord(&r.UserNeverHadWinningPosition, result)
+	}
+	if opponentHadWin {
+		updateRecord(&r.OpponentHadWinningPosition, result)
+	} else {
+		updateRecord(&r.OpponentNeverHadWinningPosition, result)
+	}
 }
 
 func updateRecord(r *TimeClassRecord, result string) {
