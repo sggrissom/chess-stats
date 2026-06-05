@@ -186,6 +186,9 @@ export interface TimeClassRecord {
 export interface TaggedRecords {
     analyzedGames: number
     gotWinningPosition: TimeClassRecord
+    userHadWinningPosition: TimeClassRecord
+    userNeverHadWinningPosition: TimeClassRecord
+    opponentHadWinningPosition: TimeClassRecord
     opponentNeverHadWinningPosition: TimeClassRecord
 }
 
