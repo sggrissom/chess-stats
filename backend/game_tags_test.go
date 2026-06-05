@@ -109,7 +109,7 @@ func TestTagGameNoComebackFromSmallLead(t *testing.T) {
 	}
 }
 
-func TestRecordTaggedPositionResultIncludesBothSides(t *testing.T) {
+func TestRecordTaggedPositionResultTracksTwoBinaryPositionRecords(t *testing.T) {
 	var records TaggedRecords
 	recordTaggedPositionResult(&records, "win", true, false)
 	recordTaggedPositionResult(&records, "loss", false, true)
@@ -118,20 +118,10 @@ func TestRecordTaggedPositionResultIncludesBothSides(t *testing.T) {
 	if records.AnalyzedGames != 3 {
 		t.Fatalf("expected every analyzed game to be counted, got %d", records.AnalyzedGames)
 	}
-	if totalTimeClassRecord(records.UserHadWinningPosition)+totalTimeClassRecord(records.UserNeverHadWinningPosition) != records.AnalyzedGames {
-		t.Fatalf("expected user winning-position rows to include all games: %+v", records)
+	if records.HadWinningPosition.Yes != 1 || records.HadWinningPosition.No != 2 {
+		t.Fatalf("expected a binary user winning-position split without result buckets: %+v", records)
 	}
-	if totalTimeClassRecord(records.OpponentHadWinningPosition)+totalTimeClassRecord(records.OpponentNeverHadWinningPosition) != records.AnalyzedGames {
-		t.Fatalf("expected opponent winning-position rows to include all games: %+v", records)
+	if records.OpponentNeverHadWinningPosition.Yes != 2 || records.OpponentNeverHadWinningPosition.No != 1 {
+		t.Fatalf("expected a binary opponent-never-had-winning-position split without result buckets: %+v", records)
 	}
-	if records.UserHadWinningPosition.Wins != 1 || records.UserNeverHadWinningPosition.Losses != 1 || records.UserNeverHadWinningPosition.Draws != 1 {
-		t.Fatalf("unexpected user-side record split: %+v", records)
-	}
-	if records.OpponentHadWinningPosition.Losses != 1 || records.OpponentNeverHadWinningPosition.Wins != 1 || records.OpponentNeverHadWinningPosition.Draws != 1 {
-		t.Fatalf("unexpected opponent-side record split: %+v", records)
-	}
-}
-
-func totalTimeClassRecord(r TimeClassRecord) int {
-	return r.Wins + r.Losses + r.Draws
 }
