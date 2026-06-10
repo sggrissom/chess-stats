@@ -24,6 +24,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetGameStats)
 	vbeam.RegisterProc(app, GetOpeningStats)
 	vbeam.RegisterProc(app, GetRecentGames)
+	vbeam.RegisterProc(app, GetGameLeaderboards)
 	vbeam.RegisterProc(app, GetGameDetail)
 	vbeam.RegisterProc(app, RequestGameAnalysis)
 	vbeam.RegisterProc(app, RequestAllGameAnalysis)
@@ -270,6 +271,24 @@ type GetRecentGamesRequest struct {
 type GetRecentGamesResponse struct {
 	Games []RecentGameItem `json:"games"`
 	Total int              `json:"total"`
+}
+
+// LeaderboardGame combines the standard game summary with achievement metrics.
+// Individual leaderboard sections use only the metric relevant to that category.
+type LeaderboardGame struct {
+	Game           RecentGameItem `json:"game"`
+	Accuracy       float64        `json:"accuracy"`
+	BrilliantMoves int            `json:"brilliantMoves"`
+	MoveCount      int            `json:"moveCount"`
+	CompetitivePct float64        `json:"competitivePct"`
+}
+
+type GetGameLeaderboardsResponse struct {
+	MostAccurate    []LeaderboardGame `json:"mostAccurate"`
+	MostBrilliant   []LeaderboardGame `json:"mostBrilliant"`
+	QuickestWins    []LeaderboardGame `json:"quickestWins"`
+	MostCompetitive []LeaderboardGame `json:"mostCompetitive"`
+	AnalyzedGames   int               `json:"analyzedGames"`
 }
 
 type ExportPgnRequest struct {
@@ -1658,6 +1677,149 @@ func GetRatingHistory(ctx *vbeam.Context, req GameFilter) (resp GetRatingHistory
 	sort.Slice(resp.Points, func(i, j int) bool {
 		return resp.Points[i].StartTime < resp.Points[j].StartTime
 	})
+	return
+}
+
+func brilliantMoveCount(moves []MoveAnalysis) int {
+	count := 0
+	for _, move := range moves {
+		if move.Brilliant {
+			count++
+		}
+	}
+	return count
+}
+
+// competitivePositionPct measures how often an analyzed game stayed within one
+// pawn of equality. Mate positions are excluded because they cannot be expressed
+// meaningfully as a centipawn distance from equality.
+func competitivePositionPct(moves []MoveAnalysis) float64 {
+	closePositions := 0
+	totalPositions := 0
+	for _, move := range moves {
+		if move.IsMate {
+			continue
+		}
+		totalPositions++
+		if move.Evaluation >= -100 && move.Evaluation <= 100 {
+			closePositions++
+		}
+	}
+	if totalPositions == 0 {
+		return 0
+	}
+	return float64(closePositions) / float64(totalPositions) * 100
+}
+
+func pgnFullMoveCount(pgn string) int {
+	pgnFn, err := chess.PGN(strings.NewReader(pgn))
+	if err != nil {
+		return 0
+	}
+	return (len(chess.NewGame(pgnFn).Moves()) + 1) / 2
+}
+
+func leaderboardGame(ctx *vbeam.Context, game Game, analysis GameAnalysis, moveCount int) LeaderboardGame {
+	var opening OpeningInfo
+	vbolt.Read(ctx.Tx, GameOpeningBkt, game.Id, &opening)
+	accuracy := analysis.WhiteAccuracy
+	if game.UserColor == "black" {
+		accuracy = analysis.BlackAccuracy
+	}
+	return LeaderboardGame{
+		Game:           gameToRecentItem(game, opening, analysis.Status, analysis.WhiteAccuracy, analysis.BlackAccuracy, hasBrilliantMove(analysis.Moves)),
+		Accuracy:       accuracy,
+		BrilliantMoves: brilliantMoveCount(analysis.Moves),
+		MoveCount:      moveCount,
+		CompetitivePct: competitivePositionPct(analysis.Moves),
+	}
+}
+
+func trimLeaderboard(games []LeaderboardGame, limit int) []LeaderboardGame {
+	if len(games) > limit {
+		return games[:limit]
+	}
+	return games
+}
+
+func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	resp.MostAccurate = []LeaderboardGame{}
+	resp.MostBrilliant = []LeaderboardGame{}
+	resp.QuickestWins = []LeaderboardGame{}
+	resp.MostCompetitive = []LeaderboardGame{}
+
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+
+		var analysis GameAnalysis
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, game.Id) {
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, game.Id, &analysis)
+		}
+
+		moveCount := 0
+		if analysis.Status == AnalysisStatusDone {
+			moveCount = (len(analysis.Moves) + 1) / 2
+		}
+		if moveCount == 0 && game.Result == "win" {
+			var pgn string
+			vbolt.Read(ctx.Tx, GamePgnBkt, game.Id, &pgn)
+			moveCount = pgnFullMoveCount(pgn)
+		}
+
+		entry := leaderboardGame(ctx, game, analysis, moveCount)
+		if game.Result == "win" && moveCount > 0 {
+			resp.QuickestWins = append(resp.QuickestWins, entry)
+		}
+		if analysis.Status != AnalysisStatusDone || len(analysis.Moves) == 0 {
+			return true
+		}
+
+		resp.AnalyzedGames++
+		resp.MostAccurate = append(resp.MostAccurate, entry)
+		if len(analysis.Moves) >= 20 {
+			resp.MostCompetitive = append(resp.MostCompetitive, entry)
+		}
+		if entry.BrilliantMoves > 0 {
+			resp.MostBrilliant = append(resp.MostBrilliant, entry)
+		}
+		return true
+	})
+
+	sort.Slice(resp.MostAccurate, func(i, j int) bool {
+		if resp.MostAccurate[i].Accuracy == resp.MostAccurate[j].Accuracy {
+			return resp.MostAccurate[i].Game.StartTime > resp.MostAccurate[j].Game.StartTime
+		}
+		return resp.MostAccurate[i].Accuracy > resp.MostAccurate[j].Accuracy
+	})
+	sort.Slice(resp.MostBrilliant, func(i, j int) bool {
+		if resp.MostBrilliant[i].BrilliantMoves == resp.MostBrilliant[j].BrilliantMoves {
+			return resp.MostBrilliant[i].Accuracy > resp.MostBrilliant[j].Accuracy
+		}
+		return resp.MostBrilliant[i].BrilliantMoves > resp.MostBrilliant[j].BrilliantMoves
+	})
+	sort.Slice(resp.QuickestWins, func(i, j int) bool {
+		if resp.QuickestWins[i].MoveCount == resp.QuickestWins[j].MoveCount {
+			return resp.QuickestWins[i].Game.StartTime > resp.QuickestWins[j].Game.StartTime
+		}
+		return resp.QuickestWins[i].MoveCount < resp.QuickestWins[j].MoveCount
+	})
+	sort.Slice(resp.MostCompetitive, func(i, j int) bool {
+		if resp.MostCompetitive[i].CompetitivePct == resp.MostCompetitive[j].CompetitivePct {
+			return resp.MostCompetitive[i].Game.StartTime > resp.MostCompetitive[j].Game.StartTime
+		}
+		return resp.MostCompetitive[i].CompetitivePct > resp.MostCompetitive[j].CompetitivePct
+	})
+
+	const leaderboardSize = 5
+	resp.MostAccurate = trimLeaderboard(resp.MostAccurate, leaderboardSize)
+	resp.MostBrilliant = trimLeaderboard(resp.MostBrilliant, leaderboardSize)
+	resp.QuickestWins = trimLeaderboard(resp.QuickestWins, leaderboardSize)
+	resp.MostCompetitive = trimLeaderboard(resp.MostCompetitive, leaderboardSize)
 	return
 }
 
