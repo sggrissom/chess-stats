@@ -43,3 +43,38 @@ func TestPgnFullMoveCountRejectsInvalidPgn(t *testing.T) {
 		t.Fatalf("pgnFullMoveCount() = %d, want 0", got)
 	}
 }
+
+func TestPgnEndsInCheckmate(t *testing.T) {
+	pgn := `[Event "Test"]
+[Result "1-0"]
+
+1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0`
+	if !pgnEndsInCheckmate(pgn) {
+		t.Fatal("pgnEndsInCheckmate() = false, want true")
+	}
+}
+
+func TestPgnEndsInCheckmateRejectsNonBoardWin(t *testing.T) {
+	pgn := `[Event "Test"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 1-0`
+	if pgnEndsInCheckmate(pgn) {
+		t.Fatal("pgnEndsInCheckmate() = true for a non-checkmate win")
+	}
+}
+
+func TestAnalyzedMovesForColor(t *testing.T) {
+	moves := []MoveAnalysis{
+		{Color: "white"},
+		{Color: "black"},
+		{Color: "white"},
+		{Color: "black"},
+	}
+	if got := analyzedMovesForColor(moves, "white"); got != 2 {
+		t.Fatalf("analyzedMovesForColor(white) = %d, want 2", got)
+	}
+	if got := analyzedMovesForColor(moves, "black"); got != 1 {
+		t.Fatalf("analyzedMovesForColor(black) = %d, want 1 because the final move has no post-move evaluation", got)
+	}
+}

@@ -130,8 +130,8 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
     {
       key: "quickest",
       eyebrow: "Efficiency",
-      title: "Quickest Wins",
-      description: "Your victories that ended in the fewest full moves.",
+      title: "Quickest Checkmates",
+      description: "Your fastest wins delivered on the board—not by disconnect or abandonment.",
       entries: leaderboards.quickestWins,
       metric: entry => String(entry.moveCount),
       metricLabel: "moves",

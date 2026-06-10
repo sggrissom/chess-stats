@@ -315,9 +315,9 @@ func moveAccuracy(wpLoss float64) float64 {
 	return acc
 }
 
-
-// TagBrilliantMoves marks tactical sacrifice moves as brilliant using Stockfish eval deltas
-// and simple material sacrifice heuristics.
+// TagBrilliantMoves marks engine-best tactical sacrifices that preserve the
+// mover's winning chances. Material is checked after the opponent's reply so
+// accepted sacrifices (the common case) are visible to the heuristic.
 func TagBrilliantMoves(pgn string, moves []MoveAnalysis) []MoveAnalysis {
 	if len(moves) < 2 {
 		return moves
@@ -340,29 +340,31 @@ func TagBrilliantMoves(pgn string, moves []MoveAnalysis) []MoveAnalysis {
 			continue
 		}
 
-		beforeEval := normalizeEvalCp(moves[i])
-		afterEval := normalizeEvalCp(moves[i+1])
-		wpBefore := winProbability(beforeEval)
-		wpAfter := winProbability(afterEval)
-
-		var gain float64
+		wpBefore := winProbability(normalizeEvalCp(moves[i]))
+		wpAfter := winProbability(normalizeEvalCp(moves[i+1]))
+		var wpLoss float64
 		if m.Color == "white" {
-			gain = wpAfter - wpBefore
+			wpLoss = wpBefore - wpAfter
 		} else {
-			gain = wpBefore - wpAfter
+			wpLoss = wpAfter - wpBefore
 		}
-		if gain < 8.0 {
+		// A brilliant sacrifice should be sound, not merely a flashy blunder.
+		if wpLoss > 2.0 {
 			continue
 		}
 
 		beforeMaterial := materialBalanceForColor(positions[i].Board(), m.Color)
-		afterMaterial := materialBalanceForColor(positions[i+1].Board(), m.Color)
+		afterIndex := i + 1
+		if i+2 < len(positions) {
+			afterIndex = i + 2
+		}
+		afterMaterial := materialBalanceForColor(positions[afterIndex].Board(), m.Color)
 		if afterMaterial-beforeMaterial > -2 {
 			continue
 		}
 
 		m.Brilliant = true
-		m.BrilliantReason = "sacrifice_with_eval_gain"
+		m.BrilliantReason = "sound_material_sacrifice"
 	}
 
 	return moves
