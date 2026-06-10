@@ -8,6 +8,7 @@ async function main() {
         vlens.routeHandler("/dashboard/stats", () => import("@app/pages/dashboard/stats")),
         vlens.routeHandler("/dashboard/openings", () => import("@app/pages/dashboard/openings")),
         vlens.routeHandler("/dashboard/games", () => import("@app/pages/dashboard/games")),
+        vlens.routeHandler("/dashboard/leaderboards", () => import("@app/pages/dashboard/leaderboards")),
         vlens.routeHandler("/dashboard/opponents", () => import("@app/pages/dashboard/opponents")),
         vlens.routeHandler("/dashboard", () => import("@app/pages/dashboard/index")),
         vlens.routeHandler("/game", () => import("@app/pages/game")),

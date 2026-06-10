@@ -75,6 +75,22 @@ export interface GetRecentGamesResponse {
     total: number
 }
 
+export interface LeaderboardGame {
+    game: RecentGameItem
+    accuracy: number
+    brilliantMoves: number
+    moveCount: number
+    competitivePct: number
+}
+
+export interface GetGameLeaderboardsResponse {
+    mostAccurate: LeaderboardGame[]
+    mostBrilliant: LeaderboardGame[]
+    quickestWins: LeaderboardGame[]
+    mostCompetitive: LeaderboardGame[]
+    analyzedGames: number
+}
+
 export interface GetGameDetailRequest {
     gameId: string
 }
@@ -330,6 +346,10 @@ export async function GetOpeningStats(data: GameFilter): Promise<rpc.Response<Ge
 
 export async function GetRecentGames(data: GetRecentGamesRequest): Promise<rpc.Response<GetRecentGamesResponse>> {
     return await rpc.call<GetRecentGamesResponse>('GetRecentGames', JSON.stringify(data));
+}
+
+export async function GetGameLeaderboards(data: Empty): Promise<rpc.Response<GetGameLeaderboardsResponse>> {
+    return await rpc.call<GetGameLeaderboardsResponse>('GetGameLeaderboards', JSON.stringify(data));
 }
 
 export async function GetGameDetail(data: GetGameDetailRequest): Promise<rpc.Response<GetGameDetailResponse>> {
