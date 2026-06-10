@@ -1711,12 +1711,35 @@ func competitivePositionPct(moves []MoveAnalysis) float64 {
 	return float64(closePositions) / float64(totalPositions) * 100
 }
 
-func pgnFullMoveCount(pgn string) int {
+func parsedPgnGame(pgn string) (*chess.Game, bool) {
 	pgnFn, err := chess.PGN(strings.NewReader(pgn))
 	if err != nil {
+		return nil, false
+	}
+	return chess.NewGame(pgnFn), true
+}
+
+func pgnFullMoveCount(pgn string) int {
+	game, ok := parsedPgnGame(pgn)
+	if !ok {
 		return 0
 	}
-	return (len(chess.NewGame(pgnFn).Moves()) + 1) / 2
+	return (len(game.Moves()) + 1) / 2
+}
+
+func pgnEndsInCheckmate(pgn string) bool {
+	game, ok := parsedPgnGame(pgn)
+	return ok && game.Method() == chess.Checkmate
+}
+
+func analyzedMovesForColor(moves []MoveAnalysis, color string) int {
+	count := 0
+	for i := 0; i < len(moves)-1; i++ {
+		if moves[i].Color == color {
+			count++
+		}
+	}
+	return count
 }
 
 func leaderboardGame(ctx *vbeam.Context, game Game, analysis GameAnalysis, moveCount int) LeaderboardGame {
@@ -1761,18 +1784,20 @@ func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsR
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, game.Id, &analysis)
 		}
 
-		moveCount := 0
-		if analysis.Status == AnalysisStatusDone {
+		var pgn string
+		vbolt.Read(ctx.Tx, GamePgnBkt, game.Id, &pgn)
+		moveCount := pgnFullMoveCount(pgn)
+		if moveCount == 0 && analysis.Status == AnalysisStatusDone {
 			moveCount = (len(analysis.Moves) + 1) / 2
 		}
-		if moveCount == 0 && game.Result == "win" {
-			var pgn string
-			vbolt.Read(ctx.Tx, GamePgnBkt, game.Id, &pgn)
-			moveCount = pgnFullMoveCount(pgn)
-		}
 
+		if analysis.Status == AnalysisStatusDone && len(analysis.Moves) > 0 {
+			// Re-run the lightweight heuristic so existing analyses benefit from
+			// brilliant-detection improvements without requiring reanalysis.
+			analysis.Moves = TagBrilliantMoves(pgn, analysis.Moves)
+		}
 		entry := leaderboardGame(ctx, game, analysis, moveCount)
-		if game.Result == "win" && moveCount > 0 {
+		if game.Result == "win" && moveCount > 0 && pgnEndsInCheckmate(pgn) {
 			resp.QuickestWins = append(resp.QuickestWins, entry)
 		}
 		if analysis.Status != AnalysisStatusDone || len(analysis.Moves) == 0 {
@@ -1780,7 +1805,10 @@ func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsR
 		}
 
 		resp.AnalyzedGames++
-		resp.MostAccurate = append(resp.MostAccurate, entry)
+		const minimumAccuracyMoves = 10
+		if analyzedMovesForColor(analysis.Moves, game.UserColor) >= minimumAccuracyMoves {
+			resp.MostAccurate = append(resp.MostAccurate, entry)
+		}
 		if len(analysis.Moves) >= 20 {
 			resp.MostCompetitive = append(resp.MostCompetitive, entry)
 		}
