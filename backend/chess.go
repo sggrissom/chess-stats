@@ -1784,22 +1784,28 @@ func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsR
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, game.Id, &analysis)
 		}
 
-		var pgn string
-		vbolt.Read(ctx.Tx, GamePgnBkt, game.Id, &pgn)
-		moveCount := pgnFullMoveCount(pgn)
-		if moveCount == 0 && analysis.Status == AnalysisStatusDone {
+		moveCount := 0
+		if analysis.Status == AnalysisStatusDone {
 			moveCount = (len(analysis.Moves) + 1) / 2
 		}
 
-		if analysis.Status == AnalysisStatusDone && len(analysis.Moves) > 0 {
-			// Re-run the lightweight heuristic so existing analyses benefit from
-			// brilliant-detection improvements without requiring reanalysis.
-			analysis.Moves = TagBrilliantMoves(pgn, analysis.Moves)
+		// PGN parsing is one of the expensive parts of building leaderboards. Only
+		// load and parse PGNs for the one leaderboard that needs checkmate
+		// detection, instead of doing it for every game on the page.
+		if game.Result == "win" {
+			var pgn string
+			vbolt.Read(ctx.Tx, GamePgnBkt, game.Id, &pgn)
+			pgnMoveCount := pgnFullMoveCount(pgn)
+			if pgnMoveCount > 0 {
+				moveCount = pgnMoveCount
+			}
+			if moveCount > 0 && pgnEndsInCheckmate(pgn) {
+				entry := leaderboardGame(ctx, game, analysis, moveCount)
+				resp.QuickestWins = append(resp.QuickestWins, entry)
+			}
 		}
+
 		entry := leaderboardGame(ctx, game, analysis, moveCount)
-		if game.Result == "win" && moveCount > 0 && pgnEndsInCheckmate(pgn) {
-			resp.QuickestWins = append(resp.QuickestWins, entry)
-		}
 		if analysis.Status != AnalysisStatusDone || len(analysis.Moves) == 0 {
 			return true
 		}
