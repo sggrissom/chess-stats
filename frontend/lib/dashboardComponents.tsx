@@ -853,28 +853,53 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
         )}
         {!loading && trendBuckets.length > 1 && <OpeningTrendChart buckets={trendBuckets} />}
         {!loading && games.length > 0 && (
-          <table class="stats-table games-table opening-explorer-table">
-            <thead>
-              <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Analysis</th><th>Brilliant</th></tr>
-            </thead>
-            <tbody>
+          <>
+            <table class="stats-table games-table opening-explorer-table">
+              <thead>
+                <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Analysis</th><th>Brilliant</th></tr>
+              </thead>
+              <tbody>
+                {games.map(g => {
+                  const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
+                  const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
+                  const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
+                  return (
+                    <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
+                      <td>{formatDate(g.startTime)}</td>
+                      <td>{opponent}</td>
+                      <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
+                      <td>{opponentRating}</td>
+                      <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
+                      <td>{g.hasBrilliant ? <span class="brilliant-chip" title="Brilliant move found">✨</span> : <span class="muted-cell">—</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div class="games-cards opening-explorer-cards">
               {games.map(g => {
                 const opponent = g.userColor === "white" ? g.blackUsername : g.whiteUsername;
                 const opponentRating = g.userColor === "white" ? g.blackRating : g.whiteRating;
                 const resultClass = g.result === "win" ? "result-win" : g.result === "loss" ? "result-loss" : "result-draw";
                 return (
-                  <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
-                    <td>{formatDate(g.startTime)}</td>
-                    <td>{opponent}</td>
-                    <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
-                    <td>{opponentRating}</td>
-                    <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
-                    <td>{g.hasBrilliant ? <span class="brilliant-chip" title="Brilliant move found">✨</span> : <span class="muted-cell">—</span>}</td>
-                  </tr>
+                  <div key={g.id} class="game-card" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
+                    <div class="game-card-top">
+                      <span>{formatDate(g.startTime)}</span>
+                      <span>
+                        {analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}
+                        {g.hasBrilliant && <span class="brilliant-chip" title="Brilliant move found">✨</span>}
+                      </span>
+                    </div>
+                    <div class="game-card-opponent">vs {opponent} ({opponentRating})</div>
+                    <div class="game-card-meta">
+                      <span>{g.userColor === "white" ? "♙ White" : "♟ Black"}</span>
+                      <span class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</span>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
         {(showPrev || showNext) && (
           <div class="pagination">
