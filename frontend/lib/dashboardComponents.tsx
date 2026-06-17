@@ -977,10 +977,19 @@ export function OpeningColorSection({ title, entries, getColor, getVariationColo
                 <ColorCells r={otherAgg} />
               </tr>
               {otherExpanded && otherEntries.map(([name, rec]) => (
-                <tr key={`${otherKey}/${name}`} class="variation-row">
-                  <td style="padding-left: 1.5em">{name}</td>
-                  <ColorCells r={getColor(rec)} />
-                </tr>
+                <preact.Fragment key={`${otherKey}/${name}`}>
+                  <tr class="variation-row">
+                    <td style="padding-left: 1.5em">
+                      {name}
+                      {" "}
+                      <a href="#" class="opening-explorer-btn" onClick={vlens.cachePartial(onToggleOpeningGames, state, filter, name, color)}>
+                        {state.openingExplorer[`${name}|${color}`] ? "▲ Games" : "▼ Games"}
+                      </a>
+                    </td>
+                    <ColorCells r={getColor(rec)} />
+                  </tr>
+                  <OpeningGamesPanel opening={name} color={color} state={state} filter={filter} />
+                </preact.Fragment>
               ))}
             </>
           )}
