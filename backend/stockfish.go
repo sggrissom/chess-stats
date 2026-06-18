@@ -340,16 +340,15 @@ func TagBrilliantMoves(pgn string, moves []MoveAnalysis) []MoveAnalysis {
 			continue
 		}
 
-		wpBefore := winProbability(normalizeEvalCp(moves[i]))
-		wpAfter := winProbability(normalizeEvalCp(moves[i+1]))
-		var wpLoss float64
-		if m.Color == "white" {
-			wpLoss = wpBefore - wpAfter
-		} else {
-			wpLoss = wpAfter - wpBefore
-		}
+		wpBefore := moverWinProbability(normalizeEvalCp(moves[i]), m.Color)
+		wpAfter := moverWinProbability(normalizeEvalCp(moves[i+1]), m.Color)
+		wpLoss := wpBefore - wpAfter
 		// A brilliant sacrifice should be sound, not merely a flashy blunder.
 		if wpLoss > 2.0 {
+			continue
+		}
+		// Do not award brilliancies for forced moves in already-lost positions.
+		if wpBefore < 25.0 {
 			continue
 		}
 
@@ -362,12 +361,31 @@ func TagBrilliantMoves(pgn string, moves []MoveAnalysis) []MoveAnalysis {
 		if afterMaterial-beforeMaterial > -2 {
 			continue
 		}
+		// The sacrifice should set a trap or tactical problem: after the
+		// opponent accepts it, the mover's practical chances should clearly
+		// improve. This filters out routine equal trades where material
+		// temporarily disappears, and desperate forced moves before mate.
+		wpAfterReply := moverWinProbability(normalizeEvalCp(moves[i+1]), m.Color)
+		if i+2 < len(moves) {
+			wpAfterReply = moverWinProbability(normalizeEvalCp(moves[i+2]), m.Color)
+		}
+		if wpAfterReply-wpBefore < 8.0 {
+			continue
+		}
 
 		m.Brilliant = true
 		m.BrilliantReason = "sound_material_sacrifice"
 	}
 
 	return moves
+}
+
+func moverWinProbability(cp int, color string) float64 {
+	wp := winProbability(cp)
+	if color == "black" {
+		return 100 - wp
+	}
+	return wp
 }
 
 func normalizeEvalCp(ma MoveAnalysis) int {
