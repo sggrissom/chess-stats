@@ -34,8 +34,8 @@ export function DashboardLayout({
     <div class="dashboard-page">
       <div class="dashboard-header">
         <h1>Chess Stats</h1>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span style="color:var(--text-muted);font-size:13px">{name}</span>
+        <div class="dashboard-user">
+          <span class="dashboard-user-name">{name}</span>
           <button class="btn btn-secondary btn-sm" onClick={onLogoutClicked}>
             Logout
           </button>

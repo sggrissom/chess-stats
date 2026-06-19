@@ -323,21 +323,28 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
 
   return (
     <DashboardLayout name={currentAuth.name} route={route}>
-      <div class="chess-section" style="margin-bottom:20px">
-        <h2>Chess.com</h2>
+      <div class="chess-section overview-connection-card">
+        <div class="chess-section-heading">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h2>Chess.com</h2>
+          </div>
+          {data.chesscomUsername && <span class="game-count-pill">{data.gameCount} games synced</span>}
+        </div>
         {data.chesscomUsername ? (
           <div class="chess-connected">
             <p>
               Connected as <strong>{data.chesscomUsername}</strong>{" "}
               <a href="#" class="auth-link" onClick={vlens.cachePartial(onChangeUsername, state)}>Change</a>
             </p>
-            <p class="game-count">{data.gameCount} games synced</p>
-            <button class="btn btn-primary" disabled={state.syncing} onClick={vlens.cachePartial(onSyncGames, state)}>
-              {state.syncing ? "Syncing..." : "Sync Games"}
-            </button>
-            <button class="btn btn-secondary" disabled={state.analyzingAll} onClick={vlens.cachePartial(onAnalyzeAllGames, state)}>
-              {state.analyzingAll ? "Queueing..." : "Analyze All Games"}
-            </button>
+            <div class="chess-actions">
+              <button class="btn btn-primary" disabled={state.syncing} onClick={vlens.cachePartial(onSyncGames, state)}>
+                {state.syncing ? "Syncing..." : "Sync Games"}
+              </button>
+              <button class="btn btn-secondary" disabled={state.analyzingAll} onClick={vlens.cachePartial(onAnalyzeAllGames, state)}>
+                {state.analyzingAll ? "Queueing..." : "Analyze All Games"}
+              </button>
+            </div>
           </div>
         ) : (
           <form class="chess-username-form" onSubmit={vlens.cachePartial(onSaveUsername, state)}>
