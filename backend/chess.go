@@ -94,14 +94,19 @@ func gamePositionSvgHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var svgBuf bytes.Buffer
-		if svgErr := chessimage.SVG(&svgBuf, positions[ply].Board(), chessimage.Perspective(perspective)); svgErr != nil {
+		var lastMove *chess.Move
+		if ply > 0 {
+			moves := chess.NewGame(pgnFn).Moves()
+			if ply-1 < len(moves) {
+				lastMove = moves[ply-1]
+			}
+		}
+
+		svg, svgErr := boardSVGWithLastMove(positions[ply].Board(), perspective, lastMove)
+		if svgErr != nil {
 			res = result{status: http.StatusInternalServerError, msg: "failed to render board"}
 			return
 		}
-		svg := strings.Replace(svgBuf.String(),
-			`width="360" height="360"`,
-			`width="360" height="360" viewBox="0 0 360 360"`, 1)
 		res = result{svg: svg}
 	})
 
@@ -112,6 +117,39 @@ func gamePositionSvgHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Write([]byte(res.svg))
+}
+
+func boardSVGWithLastMove(board *chess.Board, perspective chess.Color, lastMove *chess.Move) (string, error) {
+	var svgBuf bytes.Buffer
+	if err := chessimage.SVG(&svgBuf, board, chessimage.Perspective(perspective)); err != nil {
+		return "", err
+	}
+
+	svg := strings.Replace(svgBuf.String(),
+		`width="360" height="360"`,
+		`width="360" height="360" viewBox="0 0 360 360"`, 1)
+	return addLastMoveHighlight(svg, perspective, lastMove), nil
+}
+
+func addLastMoveHighlight(svg string, perspective chess.Color, move *chess.Move) string {
+	if move == nil {
+		return svg
+	}
+
+	highlight := lastMoveSquareHighlight(move.S1(), perspective, 0.28) +
+		lastMoveSquareHighlight(move.S2(), perspective, 0.42)
+	return strings.Replace(svg, "</svg>", highlight+"</svg>", 1)
+}
+
+func lastMoveSquareHighlight(square chess.Square, perspective chess.Color, opacity float64) string {
+	file := int(square.File())
+	rank := int(square.Rank())
+	if perspective == chess.Black {
+		file = 7 - file
+	} else {
+		rank = 7 - rank
+	}
+	return fmt.Sprintf(`<rect x="%d" y="%d" width="45" height="45" fill="#f7d154" opacity="%.2f" pointer-events="none"/>`, file*45, rank*45, opacity)
 }
 
 // Request/Response types
@@ -2003,10 +2041,14 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 				if g.UserColor == "black" {
 					perspective = chess.Black
 				}
-				for _, pos := range positions {
-					var svgBuf bytes.Buffer
-					if svgErr := chessimage.SVG(&svgBuf, pos.Board(), chessimage.Perspective(perspective)); svgErr == nil {
-						resp.BoardSvgs = append(resp.BoardSvgs, svgBuf.String())
+				gameMoves := parsedGame.Moves()
+				for i, pos := range positions {
+					var lastMove *chess.Move
+					if i > 0 && i-1 < len(gameMoves) {
+						lastMove = gameMoves[i-1]
+					}
+					if svg, svgErr := boardSVGWithLastMove(pos.Board(), perspective, lastMove); svgErr == nil {
+						resp.BoardSvgs = append(resp.BoardSvgs, svg)
 					}
 				}
 				if len(resp.BoardSvgs) > 0 {
