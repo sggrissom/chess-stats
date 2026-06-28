@@ -30,6 +30,40 @@ export interface AdminContextResponse {
     auth: AuthResponse
 }
 
+export interface PerformanceEndpointSummary {
+    path: string
+    count: number
+    slowCount: number
+    errorCount: number
+    totalMs: number
+    averageMs: number
+    maxMs: number
+    lastStatus: number
+    lastDurationMs: number
+    lastSeen: number
+}
+
+export interface PerformanceRequestSample {
+    path: string
+    method: string
+    status: number
+    durationMs: number
+    at: number
+}
+
+export interface PerformanceInfoResponse {
+    success: boolean
+    error: string
+    slowRequestThresholdMs: number
+    totalRequests: number
+    slowRequests: number
+    errorRequests: number
+    averageMs: number
+    maxMs: number
+    endpoints: PerformanceEndpointSummary[]
+    recentSlowRequests: PerformanceRequestSample[]
+}
+
 export interface SetChessUsernameRequest {
     chesscomUsername: string
 }
@@ -332,6 +366,10 @@ export async function GetAuthContext(data: Empty): Promise<rpc.Response<AuthResp
 
 export async function GetAdminContext(data: Empty): Promise<rpc.Response<AdminContextResponse>> {
     return await rpc.call<AdminContextResponse>('GetAdminContext', JSON.stringify(data));
+}
+
+export async function GetPerformanceInfo(data: Empty): Promise<rpc.Response<PerformanceInfoResponse>> {
+    return await rpc.call<PerformanceInfoResponse>('GetPerformanceInfo', JSON.stringify(data));
 }
 
 export async function SetChessUsername(data: SetChessUsernameRequest): Promise<rpc.Response<SetChessUsernameResponse>> {

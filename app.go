@@ -59,6 +59,7 @@ func MakeApplication() *vbeam.Application {
 
 	backend.SetupAuth(app)
 	backend.RegisterUserMethods(app)
+	backend.RegisterPerformanceMethods(app)
 	backend.RegisterChessMethods(app)
 	backend.InitializeAnalysisWorker(db)
 
