@@ -14,6 +14,7 @@ import (
 func RegisterUserMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, CreateAccount)
 	vbeam.RegisterProc(app, GetAuthContext)
+	vbeam.RegisterProc(app, GetAdminContext)
 }
 
 // Request/Response types
@@ -48,6 +49,12 @@ type AuthResponse struct {
 	Name    string `json:"name"`
 	Email   string `json:"email"`
 	IsAdmin bool   `json:"isAdmin"`
+}
+
+type AdminContextResponse struct {
+	Success bool         `json:"success"`
+	Error   string       `json:"error,omitempty"`
+	Auth    AuthResponse `json:"auth,omitempty"`
 }
 
 // Database types
@@ -160,6 +167,21 @@ func GetAuthContext(ctx *vbeam.Context, req Empty) (resp AuthResponse, err error
 	if authErr == nil && user.Id > 0 {
 		resp = GetAuthResponseFromUser(user)
 	}
+	return
+}
+
+func GetAdminContext(ctx *vbeam.Context, req Empty) (resp AdminContextResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		resp.Error = "Authentication required"
+		return
+	}
+	if user.Id != 1 {
+		resp.Error = "Admin access required"
+		return
+	}
+	resp.Success = true
+	resp.Auth = GetAuthResponseFromUser(user)
 	return
 }
 

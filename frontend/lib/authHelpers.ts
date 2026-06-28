@@ -86,6 +86,31 @@ export async function ensureAuthInFetch(): Promise<boolean> {
   }
 }
 
+
+/**
+ * For admin routes' fetch methods - ensures authentication is valid and admin-only.
+ * Returns true if admin auth is available, false if redirected away.
+ */
+export async function ensureAdminInFetch(): Promise<boolean> {
+  if (!(await ensureAuthInFetch())) return false;
+
+  const currentAuth = auth.getAuth();
+  if (currentAuth?.isAdmin) {
+    try {
+      const [adminResponse] = await server.GetAdminContext({});
+      if (adminResponse?.success && adminResponse.auth?.isAdmin) {
+        auth.setAuth(adminResponse.auth);
+        return true;
+      }
+    } catch {
+      // Fall through to redirect below.
+    }
+  }
+
+  navigateIfNeeded("/dashboard");
+  return false;
+}
+
 /**
  * For public routes' fetch methods - redirects authenticated users to dashboard.
  * Returns true if should continue to public page, false if redirected.
@@ -132,6 +157,21 @@ export function requireAuthInView(): auth.AuthCache | null {
   if (!currentAuth || currentAuth.id <= 0) {
     auth.clearAuth();
     navigateIfNeeded("/login");
+    return null;
+  }
+  return currentAuth;
+}
+
+
+/**
+ * For admin routes' view methods - verifies auth is still valid and admin-only.
+ * Returns the current auth if valid, null if redirected away.
+ */
+export function requireAdminInView(): auth.AuthCache | null {
+  const currentAuth = requireAuthInView();
+  if (!currentAuth) return null;
+  if (!currentAuth.isAdmin) {
+    navigateIfNeeded("/dashboard");
     return null;
   }
   return currentAuth;

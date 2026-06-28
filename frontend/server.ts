@@ -24,6 +24,12 @@ export interface AuthResponse {
     isAdmin: boolean
 }
 
+export interface AdminContextResponse {
+    success: boolean
+    error: string
+    auth: AuthResponse
+}
+
 export interface SetChessUsernameRequest {
     chesscomUsername: string
 }
@@ -322,6 +328,10 @@ export async function CreateAccount(data: CreateAccountRequest): Promise<rpc.Res
 
 export async function GetAuthContext(data: Empty): Promise<rpc.Response<AuthResponse>> {
     return await rpc.call<AuthResponse>('GetAuthContext', JSON.stringify(data));
+}
+
+export async function GetAdminContext(data: Empty): Promise<rpc.Response<AdminContextResponse>> {
+    return await rpc.call<AdminContextResponse>('GetAdminContext', JSON.stringify(data));
 }
 
 export async function SetChessUsername(data: SetChessUsernameRequest): Promise<rpc.Response<SetChessUsernameResponse>> {
