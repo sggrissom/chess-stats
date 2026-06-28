@@ -2611,3 +2611,83 @@ block(`
   }
 }
 `);
+
+block(`
+.admin-section + .admin-section {
+  margin-top: 20px;
+}
+`);
+
+block(`
+.performance-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+`);
+
+block(`
+.performance-card {
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 14px;
+}
+`);
+
+block(`
+.performance-card span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+`);
+
+block(`
+.performance-card strong {
+  font-size: 1.25rem;
+}
+`);
+
+block(`
+.performance-table-wrap {
+  overflow-x: auto;
+  margin: 10px 0 22px;
+}
+`);
+
+block(`
+.performance-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+`);
+
+block(`
+.performance-table th,
+.performance-table td {
+  border-bottom: 1px solid var(--border-muted);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+`);
+
+block(`
+.performance-table th {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+`);
+
+block(`
+.muted-text {
+  color: var(--text-muted);
+}
+`);

@@ -4,6 +4,7 @@ package main
 
 import (
 	"chess"
+	"chess/backend"
 	"chess/cfg"
 	"embed"
 	"fmt"
@@ -30,6 +31,6 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", Port)
 	log.Printf("listening on %s\n", addr)
-	appServer := &http.Server{Addr: addr, Handler: app}
+	appServer := &http.Server{Addr: addr, Handler: backend.PerformanceMiddleware(app)}
 	appServer.ListenAndServe()
 }

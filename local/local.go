@@ -2,16 +2,17 @@ package main
 
 import (
 	"chess"
+	"chess/backend"
 	"chess/cfg"
 	"fmt"
-	"net/http"
-	"os"
 	"go.hasen.dev/vbeam"
 	"go.hasen.dev/vbeam/esbuilder"
 	"go.hasen.dev/vbeam/local_ui"
+	"net/http"
+	"os"
 )
 
-const Port   = 8662
+const Port = 8662
 const Domain = "chess.localhost"
 const FEDist = ".serve/frontend"
 
@@ -24,7 +25,7 @@ func StartLocalServer() {
 	vbeam.GenerateTSBindings(app, "frontend/server.ts")
 
 	addr := fmt.Sprintf(":%d", Port)
-	appServer := &http.Server{Addr: addr, Handler: app}
+	appServer := &http.Server{Addr: addr, Handler: backend.PerformanceMiddleware(app)}
 	appServer.ListenAndServe()
 }
 
