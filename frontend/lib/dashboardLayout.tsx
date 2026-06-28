@@ -12,6 +12,8 @@ const NAV_ITEMS = [
   { label: "Opponents", href: "/dashboard/opponents" },
 ];
 
+const ADMIN_NAV_ITEM = { label: "Admin", href: "/admin" };
+
 async function onLogoutClicked() {
   await auth.logout();
 }
@@ -30,6 +32,8 @@ export function DashboardLayout({
   route: string;
   children: preact.ComponentChild;
 }) {
+  const navItems = auth.getAuth()?.isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+
   return (
     <div class="dashboard-page">
       <div class="dashboard-header">
@@ -42,7 +46,7 @@ export function DashboardLayout({
         </div>
       </div>
       <nav class="dashboard-nav">
-        {NAV_ITEMS.map(item => {
+        {navItems.map(item => {
           const isActive = item.href === "/dashboard"
             ? route === "/dashboard"
             : route.startsWith(item.href);
