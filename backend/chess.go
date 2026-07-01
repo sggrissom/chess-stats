@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"chess/cfg"
 	"fmt"
+	"image/color"
 	"net/http"
 	"sort"
 	"strconv"
@@ -119,37 +120,37 @@ func gamePositionSvgHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(res.svg))
 }
 
+// lastMoveHighlightColor is the yellow used to mark the from/to squares of the
+// most recent move. The image library draws marks under the pieces.
+// lastMoveHighlightHex must match the hex the library emits for this color.
+var lastMoveHighlightColor = color.RGBA{R: 0xf7, G: 0xd1, B: 0x54, A: 0xff}
+
+const lastMoveHighlightHex = "#f7d154"
+
 func boardSVGWithLastMove(board *chess.Board, perspective chess.Color, lastMove *chess.Move) (string, error) {
 	var svgBuf bytes.Buffer
-	if err := chessimage.SVG(&svgBuf, board, chessimage.Perspective(perspective)); err != nil {
+	var err error
+	if lastMove != nil {
+		err = chessimage.SVG(&svgBuf, board,
+			chessimage.Perspective(perspective),
+			chessimage.MarkSquares(lastMoveHighlightColor, lastMove.S1(), lastMove.S2()))
+	} else {
+		err = chessimage.SVG(&svgBuf, board, chessimage.Perspective(perspective))
+	}
+	if err != nil {
 		return "", err
 	}
 
 	svg := strings.Replace(svgBuf.String(),
 		`width="360" height="360"`,
 		`width="360" height="360" viewBox="0 0 360 360"`, 1)
-	return addLastMoveHighlight(svg, perspective, lastMove), nil
-}
-
-func addLastMoveHighlight(svg string, perspective chess.Color, move *chess.Move) string {
-	if move == nil {
-		return svg
-	}
-
-	highlight := lastMoveSquareHighlight(move.S1(), perspective, 0.28) +
-		lastMoveSquareHighlight(move.S2(), perspective, 0.42)
-	return strings.Replace(svg, "</svg>", highlight+"</svg>", 1)
-}
-
-func lastMoveSquareHighlight(square chess.Square, perspective chess.Color, opacity float64) string {
-	file := int(square.File())
-	rank := int(square.Rank())
-	if perspective == chess.Black {
-		file = 7 - file
-	} else {
-		rank = 7 - rank
-	}
-	return fmt.Sprintf(`<rect x="%d" y="%d" width="45" height="45" fill="#f7d154" opacity="%.2f" pointer-events="none"/>`, file*45, rank*45, opacity)
+	// The image library hardcodes a very faint fill-opacity:0.2 for marked
+	// squares. Bump it so the last-move highlight is actually visible. The
+	// marks are still drawn under the pieces by the library.
+	svg = strings.ReplaceAll(svg,
+		"fill-opacity:0.2;fill: "+lastMoveHighlightHex,
+		"fill-opacity:0.55;fill: "+lastMoveHighlightHex)
+	return svg, nil
 }
 
 // Request/Response types

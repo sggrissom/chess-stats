@@ -30,27 +30,6 @@ export interface AdminContextResponse {
     auth: AuthResponse
 }
 
-export interface PerformanceEndpointSummary {
-    path: string
-    count: number
-    slowCount: number
-    errorCount: number
-    totalMs: number
-    averageMs: number
-    maxMs: number
-    lastStatus: number
-    lastDurationMs: number
-    lastSeen: number
-}
-
-export interface PerformanceRequestSample {
-    path: string
-    method: string
-    status: number
-    durationMs: number
-    at: number
-}
-
 export interface PerformanceInfoResponse {
     success: boolean
     error: string
@@ -113,14 +92,6 @@ export interface GetRecentGamesRequest {
 export interface GetRecentGamesResponse {
     games: RecentGameItem[]
     total: number
-}
-
-export interface LeaderboardGame {
-    game: RecentGameItem
-    accuracy: number
-    brilliantMoves: number
-    moveCount: number
-    competitivePct: number
 }
 
 export interface GetGameLeaderboardsResponse {
@@ -233,15 +204,31 @@ export interface GetSavedGamesResponse {
     games: MissedWinGame[]
 }
 
+export interface PerformanceEndpointSummary {
+    path: string
+    count: number
+    slowCount: number
+    errorCount: number
+    totalMs: number
+    averageMs: number
+    maxMs: number
+    lastStatus: number
+    lastDurationMs: number
+    lastSeen: number
+}
+
+export interface PerformanceRequestSample {
+    path: string
+    method: string
+    status: number
+    durationMs: number
+    at: number
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
     draws: number
-}
-
-export interface BinaryPositionRecord {
-    yes: number
-    no: number
 }
 
 export interface TaggedRecords {
@@ -274,6 +261,14 @@ export interface RecentGameItem {
     whiteAccuracy: number
     blackAccuracy: number
     hasBrilliant: boolean
+}
+
+export interface LeaderboardGame {
+    game: RecentGameItem
+    accuracy: number
+    brilliantMoves: number
+    moveCount: number
+    competitivePct: number
 }
 
 export interface MoveAnalysisItem {
@@ -340,6 +335,11 @@ export interface MissedWinGame {
     peakEval: number
     peakEvalMove: number
     timeClass: string
+}
+
+export interface BinaryPositionRecord {
+    yes: number
+    no: number
 }
 
 export interface ColorRecord {
