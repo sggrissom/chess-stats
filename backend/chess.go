@@ -20,6 +20,10 @@ import (
 
 func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, SetChessUsername)
+	vbeam.RegisterProc(app, LookUpChessAccount)
+	vbeam.RegisterProc(app, AddFollowedChessAccount)
+	vbeam.RegisterProc(app, RemoveFollowedChessAccount)
+	vbeam.RegisterProc(app, GetFollowedChessAccounts)
 	vbeam.RegisterProc(app, GetChessProfile)
 	vbeam.RegisterProc(app, SyncGames)
 	vbeam.RegisterProc(app, GetGameStats)
@@ -162,6 +166,25 @@ type SetChessUsernameRequest struct {
 type SetChessUsernameResponse struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
+}
+
+type ChessAccountRequest struct {
+	ChesscomUsername string `json:"chesscomUsername"`
+}
+
+type ChessAccountResponse struct {
+	Success          bool   `json:"success"`
+	Error            string `json:"error,omitempty"`
+	ChesscomUsername string `json:"chesscomUsername,omitempty"`
+}
+
+type FollowedChessAccountResponse struct {
+	ChesscomUsername string `json:"chesscomUsername"`
+	FollowedAt       int64  `json:"followedAt"`
+}
+
+type GetFollowedChessAccountsResponse struct {
+	Accounts []FollowedChessAccountResponse `json:"accounts"`
 }
 
 type GetChessProfileResponse struct {
@@ -446,6 +469,21 @@ func PackChessProfile(self *ChessProfile, buf *vpack.Buffer) {
 	vpack.String(&self.ChesscomUsername, buf)
 }
 
+type FollowedChessAccount struct {
+	Key              string
+	UserId           int
+	ChesscomUsername string
+	FollowedAt       int64
+}
+
+func PackFollowedChessAccount(self *FollowedChessAccount, buf *vpack.Buffer) {
+	vpack.Version(1, buf)
+	vpack.String(&self.Key, buf)
+	vpack.Int(&self.UserId, buf)
+	vpack.String(&self.ChesscomUsername, buf)
+	vpack.VInt64(&self.FollowedAt, buf)
+}
+
 type Game struct {
 	Id            string
 	UserId        int
@@ -497,6 +535,12 @@ func PackOpeningInfo(self *OpeningInfo, buf *vpack.Buffer) {
 // userId => ChessProfile
 var ChessProfileBkt = vbolt.Bucket(&cfg.Info, "chess_profile", vpack.FInt, PackChessProfile)
 
+// key="userId/lowercaseUsername" => FollowedChessAccount
+var FollowedChessAccountBkt = vbolt.Bucket(&cfg.Info, "followed_chess_accounts", vpack.StringZ, PackFollowedChessAccount)
+
+// Index: term=userId(int), target=followed account key(string)
+var FollowedChessAccountsByUserIdx = vbolt.Index[string, int](&cfg.Info, "followed_chess_accounts_by_user", vpack.FInt, vpack.StringZ)
+
 // gameId (chess.com game URL ID) => Game
 var GameBkt = vbolt.Bucket(&cfg.Info, "chess_games", vpack.StringZ, PackGame)
 
@@ -519,6 +563,106 @@ var OpeningBoardSvgBkt = vbolt.Bucket(&cfg.Info, "chess_opening_board_svg", vpac
 
 // Procedures
 
+func normalizeChesscomUsername(username string) string {
+	return strings.TrimSpace(username)
+}
+
+func followedChessAccountKey(userId int, username string) string {
+	return fmt.Sprintf("%d/%s", userId, strings.ToLower(normalizeChesscomUsername(username)))
+}
+
+func verifyChesscomUsername(username string) (string, error) {
+	username = normalizeChesscomUsername(username)
+	if username == "" {
+		return "", fmt.Errorf("Username is required")
+	}
+	_, err := fetchArchiveList(username)
+	if err != nil {
+		return "", err
+	}
+	return username, nil
+}
+
+func LookUpChessAccount(ctx *vbeam.Context, req ChessAccountRequest) (resp ChessAccountResponse, err error) {
+	if user, authErr := GetAuthUser(ctx); authErr != nil || user.Id == 0 {
+		resp.Error = "Authentication required"
+		return
+	}
+	username, verifyErr := verifyChesscomUsername(req.ChesscomUsername)
+	if verifyErr != nil {
+		resp.Error = "Could not verify chess.com username: " + verifyErr.Error()
+		return
+	}
+	resp.Success = true
+	resp.ChesscomUsername = username
+	return
+}
+
+func AddFollowedChessAccount(ctx *vbeam.Context, req ChessAccountRequest) (resp ChessAccountResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		resp.Error = "Authentication required"
+		return
+	}
+	username, verifyErr := verifyChesscomUsername(req.ChesscomUsername)
+	if verifyErr != nil {
+		resp.Error = "Could not verify chess.com username: " + verifyErr.Error()
+		return
+	}
+	key := followedChessAccountKey(user.Id, username)
+	account := FollowedChessAccount{Key: key, UserId: user.Id, ChesscomUsername: username, FollowedAt: time.Now().Unix()}
+	vbeam.UseWriteTx(ctx)
+	vbolt.Write(ctx.Tx, FollowedChessAccountBkt, key, &account)
+	vbolt.SetTargetSingleTerm(ctx.Tx, FollowedChessAccountsByUserIdx, key, user.Id)
+	vbolt.TxCommit(ctx.Tx)
+	resp.Success = true
+	resp.ChesscomUsername = username
+	return
+}
+
+func RemoveFollowedChessAccount(ctx *vbeam.Context, req ChessAccountRequest) (resp ChessAccountResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		resp.Error = "Authentication required"
+		return
+	}
+	username := normalizeChesscomUsername(req.ChesscomUsername)
+	if username == "" {
+		resp.Error = "Username is required"
+		return
+	}
+	key := followedChessAccountKey(user.Id, username)
+	vbeam.UseWriteTx(ctx)
+	vbolt.Delete(ctx.Tx, FollowedChessAccountBkt, key)
+	vbolt.DeleteTargetTerms(ctx.Tx, FollowedChessAccountsByUserIdx, key)
+	vbolt.TxCommit(ctx.Tx)
+	resp.Success = true
+	resp.ChesscomUsername = username
+	return
+}
+
+func GetFollowedChessAccounts(ctx *vbeam.Context, req Empty) (resp GetFollowedChessAccountsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+	var keys []string
+	vbolt.ReadTermTargets(ctx.Tx, FollowedChessAccountsByUserIdx, user.Id, &keys, vbolt.Window{})
+	resp.Accounts = make([]FollowedChessAccountResponse, 0, len(keys))
+	for _, key := range keys {
+		var account FollowedChessAccount
+		vbolt.Read(ctx.Tx, FollowedChessAccountBkt, key, &account)
+		if account.ChesscomUsername == "" {
+			continue
+		}
+		resp.Accounts = append(resp.Accounts, FollowedChessAccountResponse{ChesscomUsername: account.ChesscomUsername, FollowedAt: account.FollowedAt})
+	}
+	sort.Slice(resp.Accounts, func(i, j int) bool {
+		return strings.ToLower(resp.Accounts[i].ChesscomUsername) < strings.ToLower(resp.Accounts[j].ChesscomUsername)
+	})
+	return
+}
+
 func SetChessUsername(ctx *vbeam.Context, req SetChessUsernameRequest) (resp SetChessUsernameResponse, err error) {
 	user, authErr := GetAuthUser(ctx)
 	if authErr != nil || user.Id == 0 {
@@ -526,14 +670,7 @@ func SetChessUsername(ctx *vbeam.Context, req SetChessUsernameRequest) (resp Set
 		return
 	}
 
-	username := strings.TrimSpace(req.ChesscomUsername)
-	if username == "" {
-		resp.Error = "Username is required"
-		return
-	}
-
-	// Verify the username exists on chess.com before saving
-	_, fetchErr := fetchArchiveList(username)
+	username, fetchErr := verifyChesscomUsername(req.ChesscomUsername)
 	if fetchErr != nil {
 		resp.Error = "Could not verify chess.com username: " + fetchErr.Error()
 		return

@@ -52,6 +52,25 @@ export interface SetChessUsernameResponse {
     error: string
 }
 
+export interface ChessAccountRequest {
+    chesscomUsername: string
+}
+
+export interface ChessAccountResponse {
+    success: boolean
+    error: string
+    chesscomUsername: string
+}
+
+export interface FollowedChessAccountResponse {
+    chesscomUsername: string
+    followedAt: number
+}
+
+export interface GetFollowedChessAccountsResponse {
+    accounts: FollowedChessAccountResponse[]
+}
+
 export interface GetChessProfileResponse {
     chesscomUsername: string
     gameCount: number
@@ -374,6 +393,22 @@ export async function GetPerformanceInfo(data: Empty): Promise<rpc.Response<Perf
 
 export async function SetChessUsername(data: SetChessUsernameRequest): Promise<rpc.Response<SetChessUsernameResponse>> {
     return await rpc.call<SetChessUsernameResponse>('SetChessUsername', JSON.stringify(data));
+}
+
+export async function LookUpChessAccount(data: ChessAccountRequest): Promise<rpc.Response<ChessAccountResponse>> {
+    return await rpc.call<ChessAccountResponse>('LookUpChessAccount', JSON.stringify(data));
+}
+
+export async function AddFollowedChessAccount(data: ChessAccountRequest): Promise<rpc.Response<ChessAccountResponse>> {
+    return await rpc.call<ChessAccountResponse>('AddFollowedChessAccount', JSON.stringify(data));
+}
+
+export async function RemoveFollowedChessAccount(data: ChessAccountRequest): Promise<rpc.Response<ChessAccountResponse>> {
+    return await rpc.call<ChessAccountResponse>('RemoveFollowedChessAccount', JSON.stringify(data));
+}
+
+export async function GetFollowedChessAccounts(data: Empty): Promise<rpc.Response<GetFollowedChessAccountsResponse>> {
+    return await rpc.call<GetFollowedChessAccountsResponse>('GetFollowedChessAccounts', JSON.stringify(data));
 }
 
 export async function GetChessProfile(data: Empty): Promise<rpc.Response<GetChessProfileResponse>> {

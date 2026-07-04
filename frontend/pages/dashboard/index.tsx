@@ -15,6 +15,7 @@ import { StreaksSection, TIME_CLASS_ORDER, formatDate, gameDetailRoute } from ".
 type Data = {
   chesscomUsername: string;
   gameCount: number;
+  followedAccounts: server.FollowedChessAccountResponse[];
   stats: GetGameStatsResponse | null;
   openingStats: GetOpeningStatsResponse | null;
   ratingHistory: GetRatingHistoryResponse | null;
@@ -24,18 +25,26 @@ type Data = {
 
 type OverviewState = {
   usernameInput: string;
+  accountInput: string;
+  lookedUpUsername: string;
   saving: boolean;
   syncing: boolean;
   analyzingAll: boolean;
+  lookingUp: boolean;
+  following: boolean;
   statusMessage: string;
   isError: boolean;
 };
 
 const useOverviewState = vlens.declareHook((): OverviewState => ({
   usernameInput: "",
+  accountInput: "",
+  lookedUpUsername: "",
   saving: false,
   syncing: false,
   analyzingAll: false,
+  lookingUp: false,
+  following: false,
   statusMessage: "",
   isError: false,
 }));
@@ -57,6 +66,64 @@ async function onSaveUsername(state: OverviewState, event: Event) {
     state.isError = false;
   } else {
     state.statusMessage = resp?.error || "Failed to save username";
+    state.isError = true;
+  }
+  vlens.scheduleRedraw();
+}
+
+async function onLookUpAccount(state: OverviewState, event: Event) {
+  event.preventDefault();
+  state.lookingUp = true;
+  state.lookedUpUsername = "";
+  state.statusMessage = "";
+  state.isError = false;
+  vlens.scheduleRedraw();
+  const [resp] = await server.LookUpChessAccount({ chesscomUsername: state.accountInput });
+  state.lookingUp = false;
+  if (resp?.success) {
+    state.lookedUpUsername = resp.chesscomUsername;
+    state.statusMessage = `Found chess.com account ${resp.chesscomUsername}.`;
+    state.isError = false;
+  } else {
+    state.statusMessage = resp?.error || "Could not find that account";
+    state.isError = true;
+  }
+  vlens.scheduleRedraw();
+}
+
+async function onFollowAccount(state: OverviewState, username: string, event: Event) {
+  event.preventDefault();
+  state.following = true;
+  state.statusMessage = "";
+  state.isError = false;
+  vlens.scheduleRedraw();
+  const [resp] = await server.AddFollowedChessAccount({ chesscomUsername: username });
+  state.following = false;
+  if (resp?.success) {
+    const followedUsername = resp.chesscomUsername || username;
+    if (!_data.followedAccounts.some(a => a.chesscomUsername.toLowerCase() === followedUsername.toLowerCase())) {
+      _data.followedAccounts = [..._data.followedAccounts, { chesscomUsername: followedUsername, followedAt: Math.floor(Date.now() / 1000) }]
+        .sort((a, b) => a.chesscomUsername.localeCompare(b.chesscomUsername));
+    }
+    state.lookedUpUsername = followedUsername;
+    state.statusMessage = `Following ${followedUsername}.`;
+    state.isError = false;
+  } else {
+    state.statusMessage = resp?.error || "Failed to follow account";
+    state.isError = true;
+  }
+  vlens.scheduleRedraw();
+}
+
+async function onUnfollowAccount(state: OverviewState, username: string, event: Event) {
+  event.preventDefault();
+  const [resp] = await server.RemoveFollowedChessAccount({ chesscomUsername: username });
+  if (resp?.success) {
+    _data.followedAccounts = _data.followedAccounts.filter(a => a.chesscomUsername.toLowerCase() !== username.toLowerCase());
+    state.statusMessage = `Unfollowed ${username}.`;
+    state.isError = false;
+  } else {
+    state.statusMessage = resp?.error || "Failed to unfollow account";
     state.isError = true;
   }
   vlens.scheduleRedraw();
@@ -277,12 +344,13 @@ function OverviewContent({ data }: { data: Data }) {
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, followedAccounts: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
   const gameCount = profile?.gameCount ?? 0;
-  const data: Data = { chesscomUsername: username, gameCount, stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null };
+  const [followed] = await server.GetFollowedChessAccounts({});
+  const data: Data = { chesscomUsername: username, gameCount, followedAccounts: followed?.accounts ?? [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null };
 
   if (username) {
     if (gameCount < 1000) {
@@ -371,6 +439,52 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
           </p>
         )}
       </div>
+      <div class="chess-section overview-section followed-accounts-card">
+        <div class="overview-section-header">
+          <div>
+            <p class="eyebrow">Other accounts</p>
+            <h3>Look up or follow a chess.com account</h3>
+          </div>
+        </div>
+        <form class="follow-account-form" onSubmit={vlens.cachePartial(onLookUpAccount, state)}>
+          <div class="form-group">
+            <label htmlFor="other-chesscom-username">Chess.com Username</label>
+            <input
+              type="text"
+              id="other-chesscom-username"
+              placeholder="e.g. gothamchess"
+              {...vlens.attrsBindInput(vlens.ref(state, "accountInput"))}
+              disabled={state.lookingUp || state.following}
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn-secondary" disabled={state.lookingUp || state.following}>
+            {state.lookingUp ? "Looking up..." : "Look up"}
+          </button>
+        </form>
+        {state.lookedUpUsername && (
+          <div class="looked-up-account">
+            <div>
+              <strong>{state.lookedUpUsername}</strong>
+              <a href={`https://www.chess.com/member/${state.lookedUpUsername}`} target="_blank" rel="noreferrer">View on chess.com →</a>
+            </div>
+            <button class="btn btn-primary btn-sm" disabled={state.following} onClick={vlens.cachePartial(onFollowAccount, state, state.lookedUpUsername)}>
+              {state.following ? "Following..." : "Follow"}
+            </button>
+          </div>
+        )}
+        <div class="followed-account-list">
+          {data.followedAccounts.length === 0 ? (
+            <p class="muted-text">You are not following any other accounts yet.</p>
+          ) : data.followedAccounts.map(account => (
+            <div class="followed-account-row" key={account.chesscomUsername}>
+              <a href={`https://www.chess.com/member/${account.chesscomUsername}`} target="_blank" rel="noreferrer">{account.chesscomUsername}</a>
+              <button class="btn btn-secondary btn-sm" onClick={vlens.cachePartial(onUnfollowAccount, state, account.chesscomUsername)}>Unfollow</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {data.chesscomUsername && <OverviewContent data={data} />}
     </DashboardLayout>
   );

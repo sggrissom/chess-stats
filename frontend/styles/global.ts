@@ -2691,3 +2691,82 @@ block(`
   color: var(--text-muted);
 }
 `);
+
+block(`
+.followed-accounts-card {
+  margin-bottom: 28px;
+}
+`);
+
+block(`
+.follow-account-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+`);
+
+block(`
+.follow-account-form .form-group {
+  margin-bottom: 0;
+}
+`);
+
+block(`
+.looked-up-account,
+.followed-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(28, 33, 40, 0.55);
+}
+`);
+
+block(`
+.looked-up-account {
+  margin-bottom: 14px;
+}
+`);
+
+block(`
+.looked-up-account > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+`);
+
+block(`
+.followed-account-list {
+  display: grid;
+  gap: 8px;
+}
+`);
+
+block(`
+.muted-text {
+  color: var(--text-muted);
+}
+`);
+
+block(`
+@media (max-width: 640px) {
+  .follow-account-form,
+  .looked-up-account,
+  .followed-account-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .looked-up-account,
+  .followed-account-row {
+    flex-direction: column;
+  }
+}
+`);
