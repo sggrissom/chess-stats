@@ -452,6 +452,11 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
             <input
               type="text"
               id="other-chesscom-username"
+              name="chesscom-account-lookup"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               placeholder="e.g. gothamchess"
               {...vlens.attrsBindInput(vlens.ref(state, "accountInput"))}
               disabled={state.lookingUp || state.following}
