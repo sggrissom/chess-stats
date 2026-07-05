@@ -120,13 +120,15 @@ func recordRequestPerformance(r *http.Request, status int, duration time.Duratio
 	ep.lastSeen = now
 
 	if isSlow {
-		perfStore.recentSlow = append([]PerformanceRequestSample{{
+		sample := PerformanceRequestSample{
 			Path:       path,
 			Method:     r.Method,
 			Status:     status,
 			DurationMs: durationMs,
 			At:         now.Unix(),
-		}}, perfStore.recentSlow...)
+		}
+		LogWarnWithRequest(r, LogCategoryAPI, "Slow request", sample)
+		perfStore.recentSlow = append([]PerformanceRequestSample{sample}, perfStore.recentSlow...)
 		if len(perfStore.recentSlow) > 25 {
 			perfStore.recentSlow = perfStore.recentSlow[:25]
 		}
