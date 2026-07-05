@@ -353,12 +353,6 @@ export async function fetch(route: string, prefix: string) {
   const data: Data = { chesscomUsername: username, gameCount, followedAccounts: followed?.accounts ?? [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null };
 
   if (username) {
-    if (gameCount < 1000) {
-      await server.SyncGames({});
-      await server.RequestAllGameAnalysis({});
-      const [updatedProfile] = await server.GetChessProfile({});
-      data.gameCount = updatedProfile?.gameCount ?? gameCount;
-    }
     const thirtyDayFilter: GameFilter = {
       timeClass: "",
       minOpponentRating: 0,
