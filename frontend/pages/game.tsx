@@ -47,6 +47,26 @@ function backRouteFromGameRoute(route: string): string {
   return params.get("from") || lastGamesRoute;
 }
 
+function formatTimeControl(timeControl: string): string {
+  const match = timeControl.match(/^(\d+)(?:\+(\d+))?$/);
+  if (!match) return timeControl;
+
+  const baseSeconds = Number(match[1]);
+  const incrementSeconds = match[2] ? Number(match[2]) : 0;
+
+  if (!Number.isFinite(baseSeconds) || !Number.isFinite(incrementSeconds)) {
+    return timeControl;
+  }
+
+  const baseLabel = baseSeconds >= 60
+    ? Number.isInteger(baseSeconds / 60)
+      ? String(baseSeconds / 60)
+      : (baseSeconds / 60).toFixed(1).replace(/\.0$/, "")
+    : `${baseSeconds}s`;
+
+  return `${baseLabel}+${incrementSeconds}`;
+}
+
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
     return rpc.ok<Data>({ detail: null });
@@ -286,7 +306,7 @@ function GameHeader({ game }: { game: RecentGameItem }) {
       <div class="game-meta">
         <span class={resultCls + " result-badge"}>{resultLabel}</span>
         <span class="game-time-class">{game.timeClass}</span>
-        <span class="game-time-control">{game.timeControl}</span>
+        <span class="game-time-control" title={`Raw time control: ${game.timeControl}`}>{formatTimeControl(game.timeControl)}</span>
         {game.opening && <span class="game-opening">{game.opening}</span>}
         <span class="game-date">{formatDate(game.startTime)}</span>
       </div>
