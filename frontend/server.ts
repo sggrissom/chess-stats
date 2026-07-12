@@ -118,6 +118,7 @@ export interface GetGameLeaderboardsResponse {
     mostBrilliant: LeaderboardGame[]
     quickestWins: LeaderboardGame[]
     mostCompetitive: LeaderboardGame[]
+    biggestUpsets: LeaderboardGame[]
     analyzedGames: number
 }
 
@@ -288,6 +289,7 @@ export interface LeaderboardGame {
     brilliantMoves: number
     moveCount: number
     competitivePct: number
+    ratingDiff: number
 }
 
 export interface MoveAnalysisItem {

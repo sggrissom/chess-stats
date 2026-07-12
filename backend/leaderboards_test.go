@@ -78,3 +78,15 @@ func TestAnalyzedMovesForColor(t *testing.T) {
 		t.Fatalf("analyzedMovesForColor(black) = %d, want 1 because the final move has no post-move evaluation", got)
 	}
 }
+
+func TestRatingDifferenceUsesUserColor(t *testing.T) {
+	whiteGame := Game{UserColor: "white", WhiteRating: 1200, BlackRating: 1350}
+	if got := ratingDifference(whiteGame); got != 150 {
+		t.Fatalf("ratingDifference(white) = %d, want 150", got)
+	}
+
+	blackGame := Game{UserColor: "black", WhiteRating: 1600, BlackRating: 1450}
+	if got := ratingDifference(blackGame); got != 150 {
+		t.Fatalf("ratingDifference(black) = %d, want 150", got)
+	}
+}
