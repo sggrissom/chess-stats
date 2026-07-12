@@ -147,6 +147,16 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
       metricLabel: "close positions",
       accent: "blue",
     },
+    {
+      key: "upsets",
+      eyebrow: "Giant slayer",
+      title: "Biggest Upsets",
+      description: "Your wins against the highest-rated opponents compared with your rating.",
+      entries: leaderboards.biggestUpsets,
+      metric: entry => "+" + entry.ratingDiff,
+      metricLabel: "rating gap",
+      accent: "red",
+    },
   ] : [];
 
   return (
@@ -175,7 +185,7 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
 
       <div class="leaderboards-footer-note">
         <strong>More boards are coming.</strong>
-        <span>Best comeback, biggest upset, wildest game, and opening masterpieces can fit here next.</span>
+        <span>Best comeback, wildest game, and opening masterpieces can fit here next.</span>
       </div>
     </DashboardLayout>
   );

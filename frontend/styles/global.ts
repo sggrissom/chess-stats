@@ -2169,6 +2169,14 @@ block(`
 `);
 
 block(`
+.leaderboard-card-red .leaderboard-card-header { background: linear-gradient(145deg, rgba(248, 81, 73, 0.13), var(--surface)); }
+`);
+
+block(`
+.leaderboard-card-red .leaderboard-eyebrow { color: var(--danger); }
+`);
+
+block(`
 .leaderboard-card h2 {
   margin: 4px 0 6px;
   font-size: 18px;

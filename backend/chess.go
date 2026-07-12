@@ -343,6 +343,7 @@ type LeaderboardGame struct {
 	BrilliantMoves int            `json:"brilliantMoves"`
 	MoveCount      int            `json:"moveCount"`
 	CompetitivePct float64        `json:"competitivePct"`
+	RatingDiff     int            `json:"ratingDiff"`
 }
 
 type GetGameLeaderboardsResponse struct {
@@ -350,6 +351,7 @@ type GetGameLeaderboardsResponse struct {
 	MostBrilliant   []LeaderboardGame `json:"mostBrilliant"`
 	QuickestWins    []LeaderboardGame `json:"quickestWins"`
 	MostCompetitive []LeaderboardGame `json:"mostCompetitive"`
+	BiggestUpsets   []LeaderboardGame `json:"biggestUpsets"`
 	AnalyzedGames   int               `json:"analyzedGames"`
 }
 
@@ -1918,6 +1920,16 @@ func analyzedMovesForColor(moves []MoveAnalysis, color string) int {
 	return count
 }
 
+func ratingDifference(game Game) int {
+	userRating := game.WhiteRating
+	opponentRating := game.BlackRating
+	if game.UserColor == "black" {
+		userRating = game.BlackRating
+		opponentRating = game.WhiteRating
+	}
+	return opponentRating - userRating
+}
+
 func leaderboardGame(ctx *vbeam.Context, game Game, analysis GameAnalysis, moveCount int) LeaderboardGame {
 	var opening OpeningInfo
 	vbolt.Read(ctx.Tx, GameOpeningBkt, game.Id, &opening)
@@ -1931,6 +1943,7 @@ func leaderboardGame(ctx *vbeam.Context, game Game, analysis GameAnalysis, moveC
 		BrilliantMoves: brilliantMoveCount(analysis.Moves),
 		MoveCount:      moveCount,
 		CompetitivePct: competitivePositionPct(analysis.Moves),
+		RatingDiff:     ratingDifference(game),
 	}
 }
 
@@ -1950,6 +1963,7 @@ func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsR
 	resp.MostBrilliant = []LeaderboardGame{}
 	resp.QuickestWins = []LeaderboardGame{}
 	resp.MostCompetitive = []LeaderboardGame{}
+	resp.BiggestUpsets = []LeaderboardGame{}
 
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
 		var game Game
@@ -1982,6 +1996,9 @@ func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsR
 		}
 
 		entry := leaderboardGame(ctx, game, analysis, moveCount)
+		if game.Result == "win" && entry.RatingDiff > 0 {
+			resp.BiggestUpsets = append(resp.BiggestUpsets, entry)
+		}
 		if analysis.Status != AnalysisStatusDone || len(analysis.Moves) == 0 {
 			return true
 		}
@@ -2024,12 +2041,19 @@ func GetGameLeaderboards(ctx *vbeam.Context, _ Empty) (resp GetGameLeaderboardsR
 		}
 		return resp.MostCompetitive[i].CompetitivePct > resp.MostCompetitive[j].CompetitivePct
 	})
+	sort.Slice(resp.BiggestUpsets, func(i, j int) bool {
+		if resp.BiggestUpsets[i].RatingDiff == resp.BiggestUpsets[j].RatingDiff {
+			return resp.BiggestUpsets[i].Game.StartTime > resp.BiggestUpsets[j].Game.StartTime
+		}
+		return resp.BiggestUpsets[i].RatingDiff > resp.BiggestUpsets[j].RatingDiff
+	})
 
 	const leaderboardSize = 5
 	resp.MostAccurate = trimLeaderboard(resp.MostAccurate, leaderboardSize)
 	resp.MostBrilliant = trimLeaderboard(resp.MostBrilliant, leaderboardSize)
 	resp.QuickestWins = trimLeaderboard(resp.QuickestWins, leaderboardSize)
 	resp.MostCompetitive = trimLeaderboard(resp.MostCompetitive, leaderboardSize)
+	resp.BiggestUpsets = trimLeaderboard(resp.BiggestUpsets, leaderboardSize)
 	return
 }
 
