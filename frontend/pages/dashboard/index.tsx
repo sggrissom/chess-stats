@@ -442,15 +442,18 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
         </div>
         <form class="follow-account-form" onSubmit={vlens.cachePartial(onLookUpAccount, state)}>
           <div class="form-group">
-            <label htmlFor="other-chesscom-username">Chess.com Username</label>
+            <label htmlFor="other-chesscom-handle">Chess.com Username</label>
             <input
-              type="text"
-              id="other-chesscom-username"
-              name="chesscom-account-lookup"
-              autoComplete="off"
+              type="search"
+              id="other-chesscom-handle"
+              name="chesscom-handle-search"
+              autoComplete="new-password"
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
               placeholder="e.g. gothamchess"
               {...vlens.attrsBindInput(vlens.ref(state, "accountInput"))}
               disabled={state.lookingUp || state.following}
