@@ -604,21 +604,29 @@ block(`
   gap: 20px;
   margin: 8px 0 18px;
 }
+`);
 
+block(`
 .sessions-header h2,
 .session-detail-header h2 { margin-bottom: 3px; }
+`);
 
+block(`
 .sessions-header p,
 .session-detail-header p {
   margin: 0;
   color: var(--text-muted);
 }
+`);
 
+block(`
 .session-list {
   display: grid;
   gap: 10px;
 }
+`);
 
+block(`
 .session-card {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto minmax(190px, auto) 20px;
@@ -631,35 +639,49 @@ block(`
   border-radius: var(--radius-lg);
   transition: border-color 0.15s, background 0.15s;
 }
+`);
 
+block(`
 .session-card:hover {
   text-decoration: none;
   border-color: var(--accent);
   background: var(--surface-2);
 }
+`);
 
+block(`
 .session-card-main { display: flex; flex-direction: column; gap: 3px; }
+`);
 
+block(`
 .session-time-class {
   color: var(--text-muted);
   font-size: 13px;
 }
+`);
 
+block(`
 .session-card-record,
 .session-detail-record {
   display: flex;
   gap: 10px;
   font-weight: 600;
 }
+`);
 
+block(`
 .session-card-meta {
   color: var(--text-muted);
   font-size: 13px;
   text-align: right;
 }
+`);
 
+block(`
 .session-card-arrow { color: var(--text-muted); font-size: 18px; }
+`);
 
+block(`
 .session-back {
   display: inline-block;
   margin: 6px 0 12px;

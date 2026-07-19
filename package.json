@@ -5,5 +5,8 @@
   },
   "devDependencies": {
     "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "check:css": "node scripts/check-css-blocks.mjs"
   }
 }

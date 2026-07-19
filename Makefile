@@ -1,4 +1,4 @@
-.PHONY: all build deploy test local typecheck
+.PHONY: all build csscheck deploy test local typecheck
 all: local
 
 APP_NAME    := chess
@@ -11,7 +11,7 @@ GOOS        := linux
 GOARCH      := amd64
 CGO_ENABLED := 0
 
-build:
+build: csscheck
 	@echo "Building frontend..."
 	go run release/frontend.go
 	@echo "Building $(BINARY_NAME)..."
@@ -28,6 +28,9 @@ test:
 
 typecheck:
 	npx tsc --noEmit
+
+csscheck:
+	npm run check:css
 
 local:
 	go run chess/local
