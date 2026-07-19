@@ -823,44 +823,6 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 		added++
 	}
 
-	// Backfill opening info for games that don't have it yet (runs once on upgrade, then is fast)
-	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
-		if vbolt.HasKey(ctx.Tx, GameOpeningBkt, gameId) {
-			return true
-		}
-		var pgn string
-		vbolt.Read(ctx.Tx, GamePgnBkt, gameId, &pgn)
-		if pgn == "" {
-			return true
-		}
-		info := extractOpeningFromPGN(pgn)
-		if info.ECO != "" {
-			vbolt.Write(ctx.Tx, GameOpeningBkt, gameId, &info)
-		}
-		return true
-	})
-
-	// Backfill SVG cache for openings that don't have a cached board yet
-	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
-		var info OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
-		if info.Opening == "" {
-			return true
-		}
-		var game Game
-		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
-		svgKey := fmt.Sprintf("%d/%s/%s", user.Id, info.Opening, game.UserColor)
-		if vbolt.HasKey(ctx.Tx, OpeningBoardSvgBkt, svgKey) {
-			return true
-		}
-		var pgn string
-		vbolt.Read(ctx.Tx, GamePgnBkt, gameId, &pgn)
-		if pgn != "" {
-			cacheOpeningSvg(ctx.Tx, user.Id, info.Opening, pgn, game.UserColor)
-		}
-		return true
-	})
-
 	synced := true
 	for _, mk := range monthsToMark {
 		vbolt.Write(ctx.Tx, SyncedMonthsBkt, mk, &synced)

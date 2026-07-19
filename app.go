@@ -14,29 +14,6 @@ import (
 func OpenDB(dbpath string) *vbolt.DB {
 	dbConnection := vbolt.Open(dbpath)
 	vbolt.InitBuckets(dbConnection, &cfg.Info)
-
-	// Clear all analysis records written before the packMoveAnalysis v2 bump.
-	// Old records omit Brilliant/BrilliantReason bytes; reading them with the
-	// new codec misaligns the buffer and panics. Raw-delete avoids deserialization.
-	vbolt.ApplyDBProcess(dbConnection, "2026-0527-clear-analysis-for-v2", func() {
-		vbolt.WithWriteTx(dbConnection, func(tx *vbolt.Tx) {
-			for _, bucketName := range []string{"chess_game_analysis", "analysis_by_status"} {
-				bkt := vbolt.TxRawBucket(tx, bucketName)
-				var keys [][]byte
-				bkt.ForEach(func(k, _ []byte) error {
-					cp := make([]byte, len(k))
-					copy(cp, k)
-					keys = append(keys, cp)
-					return nil
-				})
-				for _, k := range keys {
-					bkt.Delete(k)
-				}
-			}
-			vbolt.TxCommit(tx)
-		})
-	})
-
 	return dbConnection
 }
 
