@@ -113,6 +113,24 @@ export interface GetRecentGamesResponse {
     total: number
 }
 
+export interface GetSessionsRequest {
+    timezone: string
+    timezoneOffsetMinutes: number
+}
+
+export interface GetSessionsResponse {
+    sessions: SessionSummary[]
+}
+
+export interface SessionSummary {
+    date: string
+    timeClass: string
+    record: TimeClassRecord
+    gameCount: number
+    startedAt: number
+    endedAt: number
+}
+
 export interface GetGameLeaderboardsResponse {
     mostAccurate: LeaderboardGame[]
     mostBrilliant: LeaderboardGame[]
@@ -433,6 +451,10 @@ export async function GetRecentGames(data: GetRecentGamesRequest): Promise<rpc.R
     return await rpc.call<GetRecentGamesResponse>('GetRecentGames', JSON.stringify(data));
 }
 
+export async function GetSessions(data: GetSessionsRequest): Promise<rpc.Response<GetSessionsResponse>> {
+    return await rpc.call<GetSessionsResponse>('GetSessions', JSON.stringify(data));
+}
+
 export async function GetGameLeaderboards(data: Empty): Promise<rpc.Response<GetGameLeaderboardsResponse>> {
     return await rpc.call<GetGameLeaderboardsResponse>('GetGameLeaderboards', JSON.stringify(data));
 }
@@ -488,4 +510,3 @@ export async function GetMissedWins(data: GameFilter): Promise<rpc.Response<GetM
 export async function GetSavedGames(data: GameFilter): Promise<rpc.Response<GetSavedGamesResponse>> {
     return await rpc.call<GetSavedGamesResponse>('GetSavedGames', JSON.stringify(data));
 }
-
