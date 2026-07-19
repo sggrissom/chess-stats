@@ -29,6 +29,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetGameStats)
 	vbeam.RegisterProc(app, GetOpeningStats)
 	vbeam.RegisterProc(app, GetRecentGames)
+	vbeam.RegisterProc(app, GetSessions)
 	vbeam.RegisterProc(app, GetGameLeaderboards)
 	vbeam.RegisterProc(app, GetGameDetail)
 	vbeam.RegisterProc(app, RequestGameAnalysis)
@@ -333,6 +334,27 @@ type GetRecentGamesRequest struct {
 type GetRecentGamesResponse struct {
 	Games []RecentGameItem `json:"games"`
 	Total int              `json:"total"`
+}
+
+// A session is a derived grouping of games, not a separately persisted record.
+// The date is calculated in the browser's local timezone and paired with the
+// Chess.com time class (rapid, blitz, bullet, etc.).
+type SessionSummary struct {
+	Date      string          `json:"date"`
+	TimeClass string          `json:"timeClass"`
+	Record    TimeClassRecord `json:"record"`
+	GameCount int             `json:"gameCount"`
+	StartedAt int64           `json:"startedAt"`
+	EndedAt   int64           `json:"endedAt"`
+}
+
+type GetSessionsRequest struct {
+	Timezone              string `json:"timezone"`
+	TimezoneOffsetMinutes int    `json:"timezoneOffsetMinutes"`
+}
+
+type GetSessionsResponse struct {
+	Sessions []SessionSummary `json:"sessions"`
 }
 
 // LeaderboardGame combines the standard game summary with achievement metrics.
@@ -2122,6 +2144,57 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 		}
 		resp.Games[i] = gameToRecentItem(g, opening, status, whiteAccuracy, blackAccuracy, hasBrilliantMove(analysis.Moves))
 	}
+	return
+}
+
+func sessionDate(startTime int64, timezone string, timezoneOffsetMinutes int) string {
+	if location, err := time.LoadLocation(timezone); err == nil && timezone != "" {
+		return time.Unix(startTime, 0).In(location).Format("2006-01-02")
+	}
+	// Date.getTimezoneOffset is UTC - local time, so subtract it to obtain the
+	// wall-clock date when an IANA timezone is unavailable.
+	localTimestamp := startTime - int64(timezoneOffsetMinutes*60)
+	return time.Unix(localTimestamp, 0).UTC().Format("2006-01-02")
+}
+
+func GetSessions(ctx *vbeam.Context, req GetSessionsRequest) (resp GetSessionsResponse, err error) {
+	user, authErr := GetAuthUser(ctx)
+	if authErr != nil || user.Id == 0 {
+		return
+	}
+
+	byKey := make(map[string]*SessionSummary)
+	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
+		var game Game
+		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
+		if game.StartTime == 0 || game.TimeClass == "daily" {
+			return true
+		}
+		date := sessionDate(game.StartTime, req.Timezone, req.TimezoneOffsetMinutes)
+		key := date + "/" + game.TimeClass
+		session := byKey[key]
+		if session == nil {
+			session = &SessionSummary{Date: date, TimeClass: game.TimeClass, StartedAt: game.StartTime, EndedAt: game.StartTime}
+			byKey[key] = session
+		}
+		session.GameCount++
+		updateRecord(&session.Record, game.Result)
+		if game.StartTime < session.StartedAt {
+			session.StartedAt = game.StartTime
+		}
+		if game.StartTime > session.EndedAt {
+			session.EndedAt = game.StartTime
+		}
+		return true
+	})
+
+	resp.Sessions = make([]SessionSummary, 0, len(byKey))
+	for _, session := range byKey {
+		resp.Sessions = append(resp.Sessions, *session)
+	}
+	sort.Slice(resp.Sessions, func(i, j int) bool {
+		return resp.Sessions[i].EndedAt > resp.Sessions[j].EndedAt
+	})
 	return
 }
 
