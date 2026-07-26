@@ -16,12 +16,15 @@ type Data = {
   chesscomUsername: string;
   gameCount: number;
   followedAccounts: server.FollowedChessAccountResponse[];
+  sessions: server.SessionSummary[];
   stats: GetGameStatsResponse | null;
   openingStats: GetOpeningStatsResponse | null;
   ratingHistory: GetRatingHistoryResponse | null;
   streaks: GetStreaksResponse | null;
   recentGames: RecentGameItem[] | null;
 };
+
+const RECENT_SESSION_LIMIT = 5;
 
 type OverviewState = {
   usernameInput: string;
@@ -190,6 +193,57 @@ function winPct(r: { wins: number; losses: number; draws: number }): string {
   return Math.round((r.wins / total) * 100) + "%";
 }
 
+function sessionRoute(session: server.SessionSummary): string {
+  return `/dashboard/sessions/${session.date}/${session.timeClass}`;
+}
+
+function sessionDate(date: string): string {
+  return new Date(date + "T00:00:00").toLocaleDateString(undefined, {
+    weekday: "short", month: "short", day: "numeric",
+  });
+}
+
+function sessionTime(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function RecentSessions({ sessions }: { sessions: server.SessionSummary[] }) {
+  return (
+    <div class="overview-section recent-sessions-section">
+      <div class="overview-section-header">
+        <div>
+          <p class="eyebrow">Latest activity</p>
+          <h3>Recent Sessions</h3>
+        </div>
+        <a href="/dashboard/sessions" class="overview-section-link" onClick={(event) => { event.preventDefault(); core.setRoute("/dashboard/sessions"); }}>All sessions →</a>
+      </div>
+      {sessions.length === 0 ? (
+        <p class="muted-text">No sessions yet. Sync your games to get started.</p>
+      ) : (
+        <div class="session-list">
+          {sessions.slice(0, RECENT_SESSION_LIMIT).map(session => (
+            <a key={`${session.date}-${session.timeClass}`} href={sessionRoute(session)} class="session-card" onClick={(event) => { event.preventDefault(); core.setRoute(sessionRoute(session)); }}>
+              <div class="session-card-main">
+                <strong>{sessionDate(session.date)}</strong>
+                <span class="session-time-class">{session.timeClass}</span>
+              </div>
+              <div class="session-card-record">
+                <span class="result-win">{session.record.wins}W</span>
+                <span class="result-loss">{session.record.losses}L</span>
+                <span class="result-draw">{session.record.draws}D</span>
+              </div>
+              <div class="session-card-meta">
+                {session.gameCount} game{session.gameCount === 1 ? "" : "s"} · {sessionTime(session.startedAt)}–{sessionTime(session.endedAt)}
+              </div>
+              <span class="session-card-arrow">→</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OverviewContent({ data }: { data: Data }) {
   const latestRatings = latestRatingByClass(data.ratingHistory);
   const ratingClasses = TIME_CLASS_ORDER.filter(tc => latestRatings[tc] !== undefined);
@@ -344,13 +398,13 @@ function OverviewContent({ data }: { data: Data }) {
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, followedAccounts: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, followedAccounts: [], sessions: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
   const gameCount = profile?.gameCount ?? 0;
   const [followed] = await server.GetFollowedChessAccounts({});
-  const data: Data = { chesscomUsername: username, gameCount, followedAccounts: followed?.accounts ?? [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null };
+  const data: Data = { chesscomUsername: username, gameCount, followedAccounts: followed?.accounts ?? [], sessions: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null };
 
   if (username) {
     const thirtyDayFilter: GameFilter = {
@@ -361,18 +415,23 @@ export async function fetch(route: string, prefix: string) {
       until: 0,
     };
     const allTimeFilter: GameFilter = { timeClass: "", minOpponentRating: 0, maxOpponentRating: 0, since: 0, until: 0 };
-    const [[s], [os], [rh], [st], [gamesResp]] = await Promise.all([
+    const [[s], [os], [rh], [st], [gamesResp], [sessionsResp]] = await Promise.all([
       server.GetGameStats(thirtyDayFilter),
       server.GetOpeningStats(allTimeFilter),
       server.GetRatingHistory(allTimeFilter),
       server.GetStreaks({}),
       server.GetRecentGames({ filter: allTimeFilter, limit: 10, offset: 0, brilliantOnly: false }),
+      server.GetSessions({
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+      }),
     ]);
     data.stats = s ?? null;
     data.openingStats = os ?? null;
     data.ratingHistory = rh ?? null;
     data.streaks = st ?? null;
     data.recentGames = gamesResp?.games ?? null;
+    data.sessions = sessionsResp?.sessions ?? [];
   }
   _data = data;
   return rpc.ok(data);
@@ -385,6 +444,7 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
 
   return (
     <DashboardLayout name={currentAuth.name} route={route}>
+      {data.chesscomUsername && <RecentSessions sessions={data.sessions} />}
       <div class="chess-section overview-connection-card">
         <div class="chess-section-heading">
           <div>
