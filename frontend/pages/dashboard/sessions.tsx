@@ -88,9 +88,15 @@ function SessionOverview({ session, games }: { session: server.SessionSummary; g
   const whiteWins = whiteGames.filter(game => game.result === "win").length;
   const blackGames = games.filter(game => game.userColor === "black");
   const blackWins = blackGames.filter(game => game.result === "win").length;
+  const opponentRatings = games
+    .map(game => game.userColor === "white" ? game.blackRating : game.whiteRating)
+    .filter(rating => rating > 0);
+  const averageOpponentRating = opponentRatings.length
+    ? Math.round(opponentRatings.reduce((sum, rating) => sum + rating, 0) / opponentRatings.length)
+    : null;
   const openings = sessionOpenings(games);
-  const decisiveGames = session.record.wins + session.record.losses;
   const score = session.gameCount ? Math.round(((session.record.wins + session.record.draws / 2) / session.gameCount) * 100) : 0;
+  const winRate = session.gameCount ? Math.round(session.record.wins / session.gameCount * 100) : 0;
 
   return (
     <>
@@ -107,9 +113,9 @@ function SessionOverview({ session, games }: { session: server.SessionSummary; g
 
       <div class="session-kpi-grid">
         <div class="session-kpi"><span>Record</span><strong>{session.record.wins}–{session.record.losses}–{session.record.draws}</strong><small>W–L–D across {session.gameCount} games</small></div>
-        <div class="session-kpi"><span>Decisive games</span><strong>{session.gameCount ? Math.round(decisiveGames / session.gameCount * 100) : 0}%</strong><small>{decisiveGames} finished with a winner</small></div>
+        <div class="session-kpi"><span>Win rate</span><strong>{winRate}%</strong><small>{session.record.wins} win{session.record.wins === 1 ? "" : "s"} across {session.gameCount} games</small></div>
         <div class="session-kpi"><span>Avg. accuracy</span><strong>{averageAccuracy === null ? "—" : `${averageAccuracy.toFixed(1)}%`}</strong><small>{analyzed.length} of {session.gameCount} games analyzed</small></div>
-        <div class="session-kpi"><span>Openings played</span><strong>{new Set(games.map(game => game.opening || "Unknown")).size}</strong><small>{openings[0] ? `Most used: ${openings[0].name}` : "Opening data unavailable"}</small></div>
+        <div class="session-kpi"><span>Avg. opponent</span><strong>{averageOpponentRating ?? "—"}</strong><small>{opponentRatings.length ? `Across ${opponentRatings.length} rated matchup${opponentRatings.length === 1 ? "" : "s"}` : "Rating data unavailable"}</small></div>
       </div>
 
       <div class="session-insights-grid">
