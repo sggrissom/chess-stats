@@ -4,10 +4,20 @@ import * as auth from "./authCache";
 import * as server from "../server";
 
 function navigateIfNeeded(route: string) {
-  if (typeof window !== "undefined" && window.location.pathname === route) {
+  if (typeof window === "undefined" || window.location.pathname === route) {
     return;
   }
-  core.setRoute(route);
+
+  // vlens ignores route changes while a route's fetch is still in progress.
+  // Authentication checks run inside fetch, so changing the URL immediately
+  // can leave the old route rendered at the new URL (usually as a blank page).
+  // Defer the redirect until the current fetch has completed and replace the
+  // history entry so Back does not return to an inaccessible route.
+  window.setTimeout(() => {
+    if (window.location.pathname !== route) {
+      core.replaceRoute(route);
+    }
+  }, 0);
 }
 
 /**
