@@ -211,3 +211,34 @@ func TestModulateGameStoryScoreClampsToRange(t *testing.T) {
 		t.Fatalf("score should be capped at 100, got %d", got)
 	}
 }
+
+func TestGameToRecentItemIncludesDerivedStoryForCompletedAnalysis(t *testing.T) {
+	game := Game{Id: "game-1", Result: "win", UserColor: "white"}
+	analysis := GameAnalysis{
+		Status:        AnalysisStatusDone,
+		WhiteAccuracy: 92,
+		BlackAccuracy: 85,
+		Moves: []MoveAnalysis{
+			{MoveNumber: 1, Color: "white", Evaluation: 25},
+			{MoveNumber: 2, Color: "black", Evaluation: 40},
+		},
+	}
+
+	item := gameToRecentItem(game, OpeningInfo{}, &analysis)
+	if item.Story == nil {
+		t.Fatal("expected completed analysis to expose the derived game story")
+	}
+	if item.Story.Score < 0 || item.Story.Score > 100 {
+		t.Fatalf("expected score in the display range, got %d", item.Story.Score)
+	}
+}
+
+func TestGameToRecentItemOmitsStoryWithoutAnalysis(t *testing.T) {
+	item := gameToRecentItem(Game{Id: "game-1", Result: "win", UserColor: "white"}, OpeningInfo{}, nil)
+	if item.Story != nil {
+		t.Fatalf("expected no derived story without analysis, got %+v", item.Story)
+	}
+	if item.AnalysisStatus != AnalysisStatusNone {
+		t.Fatalf("expected absent analysis status, got %d", item.AnalysisStatus)
+	}
+}

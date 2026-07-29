@@ -307,6 +307,7 @@ export interface RecentGameItem {
     whiteAccuracy: number
     blackAccuracy: number
     hasBrilliant: boolean
+    story?: GameStory
 }
 
 export interface LeaderboardGame {

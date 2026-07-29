@@ -84,6 +84,10 @@ function SessionOverview({ session, games }: { session: server.SessionSummary; g
   const averageAccuracy = analyzed.length
     ? analyzed.reduce((sum, game) => sum + (game.userColor === "white" ? game.whiteAccuracy : game.blackAccuracy), 0) / analyzed.length
     : null;
+  const scored = games.filter(game => game.story);
+  const averageGameScore = scored.length
+    ? Math.round(scored.reduce((sum, game) => sum + (game.story?.score ?? 0), 0) / scored.length)
+    : null;
   const whiteGames = games.filter(game => game.userColor === "white");
   const whiteWins = whiteGames.filter(game => game.result === "win").length;
   const blackGames = games.filter(game => game.userColor === "black");
@@ -115,6 +119,7 @@ function SessionOverview({ session, games }: { session: server.SessionSummary; g
         <div class="session-kpi"><span>Record</span><strong>{session.record.wins}–{session.record.losses}–{session.record.draws}</strong><small>W–L–D across {session.gameCount} games</small></div>
         <div class="session-kpi"><span>Win rate</span><strong>{winRate}%</strong><small>{session.record.wins} win{session.record.wins === 1 ? "" : "s"} across {session.gameCount} games</small></div>
         <div class="session-kpi"><span>Avg. accuracy</span><strong>{averageAccuracy === null ? "—" : `${averageAccuracy.toFixed(1)}%`}</strong><small>{analyzed.length} of {session.gameCount} games analyzed</small></div>
+        <div class="session-kpi"><span>Avg. game score</span><strong>{averageGameScore ?? "—"}</strong><small>{scored.length} of {session.gameCount} games scored</small></div>
         <div class="session-kpi"><span>Avg. opponent</span><strong>{averageOpponentRating ?? "—"}</strong><small>{opponentRatings.length ? `Across ${opponentRatings.length} rated matchup${opponentRatings.length === 1 ? "" : "s"}` : "Rating data unavailable"}</small></div>
       </div>
 
