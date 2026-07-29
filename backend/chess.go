@@ -2279,6 +2279,7 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 		tagResult := TagGameFromEvals(gameOutcomeForUserGame(g), analysis.Moves, DefaultGameTagThresholds())
 		resp.Tags = tagResult.Tags
 		story := ClassifyGame(g.Result, g.UserColor, g.EndReason, analysis.Moves, tagResult)
+		story = ModulateGameStoryScore(story, g.UserColor, analysis.WhiteAccuracy, analysis.BlackAccuracy, analysis.Moves)
 		resp.Story = &story
 	}
 	return

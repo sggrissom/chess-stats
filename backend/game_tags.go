@@ -137,6 +137,60 @@ func ClassifyGame(result, userColor, endReason string, evals []MoveAnalysis, tag
 	return GameStory{"balanced_draw", "Balanced draw", "Neither player established a sustained winning advantage.", 50}
 }
 
+// ModulateGameStoryScore distinguishes games with the same narrative shape by
+// considering how well both players played, how much chess was played, and any
+// brilliant moves the user found. The category and copy remain narrative facts;
+// only the score is adjusted.
+func ModulateGameStoryScore(story GameStory, userColor string, whiteAccuracy, blackAccuracy float64, moves []MoveAnalysis) GameStory {
+	userAccuracy, opponentAccuracy := whiteAccuracy, blackAccuracy
+	if userColor == "black" {
+		userAccuracy, opponentAccuracy = opponentAccuracy, userAccuracy
+	}
+
+	modifier := 0.0
+	// Accuracy is more trustworthy over a meaningful sample of moves. Weighting
+	// the opponent at 40% makes beating accurate resistance more impressive while
+	// still giving the user's own play the greater influence.
+	if validAccuracy(userAccuracy) && validAccuracy(opponentAccuracy) {
+		reliability := math.Min(1, float64(len(moves))/40)
+		combinedAccuracy := userAccuracy*0.6 + opponentAccuracy*0.4
+		modifier += (combinedAccuracy - 75) * 0.24 * reliability
+	}
+
+	lastMove := 0
+	brilliantMoves := 0
+	for _, move := range moves {
+		if move.MoveNumber > lastMove {
+			lastMove = move.MoveNumber
+		}
+		if move.Color == userColor && move.Brilliant {
+			brilliantMoves++
+		}
+	}
+	// Brilliant ideas are intentionally the strongest modifier, with a cap so
+	// that the underlying story still matters.
+	modifier += float64(min(brilliantMoves, 3) * 8)
+
+	// Very short games contain less evidence of sustained play, while games that
+	// reach a real middlegame or endgame receive a small complexity bonus. Early
+	// checkmates are already a special, high-value story and avoid the short tax.
+	switch {
+	case lastMove > 0 && lastMove < 10 && story.Category != "early_checkmate":
+		modifier -= 3
+	case lastMove >= 40:
+		modifier += 2
+	case lastMove >= 20:
+		modifier++
+	}
+
+	story.Score = max(0, min(100, story.Score+int(math.Round(modifier))))
+	return story
+}
+
+func validAccuracy(accuracy float64) bool {
+	return accuracy >= 0 && accuracy <= 100
+}
+
 func TagGameFromEvals(result string, evals []MoveAnalysis, thresholds GameTagThresholds) GameTagResult {
 	vals := make([]float64, 0, len(evals))
 	moves := make([]int, 0, len(evals))

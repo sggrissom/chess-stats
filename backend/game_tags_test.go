@@ -149,3 +149,65 @@ func TestClassifyEarlyCheckmate(t *testing.T) {
 		t.Fatalf("expected early mate to be the highest-value outcome, got %+v", story)
 	}
 }
+
+func TestModulateGameStoryScoreRewardsAccuracyAndResistance(t *testing.T) {
+	base := GameStory{Category: "converted_win", Score: 80}
+	moves := make([]MoveAnalysis, 40)
+	for i := range moves {
+		moves[i] = MoveAnalysis{MoveNumber: i/2 + 1}
+	}
+
+	accurate := ModulateGameStoryScore(base, "white", 95, 95, moves)
+	poorOpponent := ModulateGameStoryScore(base, "white", 95, 40, moves)
+	poorUser := ModulateGameStoryScore(base, "white", 40, 95, moves)
+	if accurate.Score <= poorOpponent.Score {
+		t.Fatalf("accurate resistance should improve an otherwise similar game: accurate=%d poor opponent=%d", accurate.Score, poorOpponent.Score)
+	}
+	if poorOpponent.Score <= poorUser.Score {
+		t.Fatalf("user accuracy should carry more weight than opponent accuracy: poor opponent=%d poor user=%d", poorOpponent.Score, poorUser.Score)
+	}
+}
+
+func TestModulateGameStoryScoreRewardsUserBrilliants(t *testing.T) {
+	base := GameStory{Category: "tactical_win", Score: 70}
+	moves := []MoveAnalysis{
+		{MoveNumber: 12, Color: "white", Brilliant: true},
+		{MoveNumber: 13, Color: "black", Brilliant: true},
+		{MoveNumber: 14, Color: "white", Brilliant: true},
+	}
+
+	white := ModulateGameStoryScore(base, "white", -1, -1, moves)
+	black := ModulateGameStoryScore(base, "black", -1, -1, moves)
+	if white.Score != 86 || black.Score != 78 {
+		t.Fatalf("expected only the user's brilliants to count, got white=%d black=%d", white.Score, black.Score)
+	}
+}
+
+func TestModulateGameStoryScoreUsesLengthWithoutTaxingEarlyMate(t *testing.T) {
+	base := GameStory{Category: "converted_win", Score: 80}
+	short := []MoveAnalysis{{MoveNumber: 8}}
+	long := []MoveAnalysis{{MoveNumber: 45}}
+	if got := ModulateGameStoryScore(base, "white", -1, -1, short).Score; got != 77 {
+		t.Fatalf("expected short-game adjustment, got %d", got)
+	}
+	if got := ModulateGameStoryScore(base, "white", -1, -1, long).Score; got != 82 {
+		t.Fatalf("expected long-game adjustment, got %d", got)
+	}
+	earlyMate := GameStory{Category: "early_checkmate", Score: 98}
+	if got := ModulateGameStoryScore(earlyMate, "white", -1, -1, short).Score; got != 98 {
+		t.Fatalf("early mate should not receive the short-game tax, got %d", got)
+	}
+}
+
+func TestModulateGameStoryScoreClampsToRange(t *testing.T) {
+	story := GameStory{Category: "tactical_win", Score: 95}
+	moves := []MoveAnalysis{
+		{MoveNumber: 40, Color: "white", Brilliant: true},
+		{MoveNumber: 41, Color: "white", Brilliant: true},
+		{MoveNumber: 42, Color: "white", Brilliant: true},
+		{MoveNumber: 43, Color: "white", Brilliant: true},
+	}
+	if got := ModulateGameStoryScore(story, "white", 100, 100, moves).Score; got != 100 {
+		t.Fatalf("score should be capped at 100, got %d", got)
+	}
+}
