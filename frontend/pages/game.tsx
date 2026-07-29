@@ -284,6 +284,21 @@ function GameTags({ tags }: { tags: string[] }) {
   );
 }
 
+function GameStoryCard({ story }: { story: server.GameStory }) {
+  return (
+    <div class="game-story-card">
+      <div class="game-story-score" style={`--story-score: ${story.score * 3.6}deg`}>
+        <strong>{story.score}</strong><span>/ 100</span>
+      </div>
+      <div>
+        <span class="game-story-eyebrow">How this game went</span>
+        <h3>{story.title}</h3>
+        <p>{story.description}</p>
+      </div>
+    </div>
+  );
+}
+
 function GameHeader({ game }: { game: RecentGameItem }) {
   const resultLabel = game.result.charAt(0).toUpperCase() + game.result.slice(1);
   const resultCls = game.result === "win" ? "result-win" : game.result === "loss" ? "result-loss" : "result-draw";
@@ -655,6 +670,7 @@ function AnalysisPanel({
   // ANALYSIS_DONE
   return (
     <div class="analysis-panel">
+      {detail.story && <GameStoryCard story={detail.story} />}
       {detail.tags && detail.tags.length > 0 && <GameTags tags={detail.tags} />}
       <AccuracyBars white={detail.whiteAccuracy} black={detail.blackAccuracy} />
       {detail.moves && detail.moves.length > 0 && <PhaseAccuracyBreakdown moves={detail.moves} />}

@@ -1,6 +1,10 @@
 package backend
 
-import "math"
+import (
+	"math"
+	"sort"
+	"strings"
+)
 
 const mateEval = 100.0
 
@@ -60,6 +64,77 @@ type GameTagMetrics struct {
 type GameTagResult struct {
 	Tags    []string
 	Metrics GameTagMetrics
+}
+
+// GameStory is a user-relative summary of how the game was decided.  Score is
+// deliberately a "how good did this game feel?" score rather than another
+// accuracy number: getting a winning position still earns credit after a loss.
+type GameStory struct {
+	Category    string `json:"category"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Score       int    `json:"score"`
+}
+
+func ClassifyGame(result, userColor, endReason string, evals []MoveAnalysis, tagged GameTagResult) GameStory {
+	userHadWin := hasGameTag(tagged.Tags, string(TagWhiteHadWin))
+	opponentHadWin := hasGameTag(tagged.Tags, string(TagBlackHadWin))
+	userWonOpening := hasGameTag(tagged.Tags, string(TagWhiteWonOpening))
+	opponentWonOpening := hasGameTag(tagged.Tags, string(TagBlackWonOpening))
+	if userColor == "black" {
+		userHadWin, opponentHadWin = opponentHadWin, userHadWin
+		userWonOpening, opponentWonOpening = opponentWonOpening, userWonOpening
+	}
+	timedOut := strings.Contains(strings.ToLower(endReason), "timeout") || strings.Contains(strings.ToLower(endReason), "time")
+	earlyMate := false
+	for _, move := range evals {
+		if move.IsMate && move.MoveNumber <= 20 && ((userColor == "white" && move.MateIn > 0) || (userColor == "black" && move.MateIn < 0)) {
+			earlyMate = true
+			break
+		}
+	}
+
+	if result == "win" {
+		switch {
+		case earlyMate:
+			return GameStory{"early_checkmate", "Early checkmate", "A decisive attack ended the game before move 20.", 98}
+		case timedOut && opponentHadWin:
+			return GameStory{"time_win", "Time swindle", "You turned a losing position around on the clock.", 76}
+		case hasGameTag(tagged.Tags, string(TagGradualOutplay)):
+			return GameStory{"slow_outplay", "Slow outplay", "No single blunder decided it; your advantage grew steadily.", 94}
+		case userWonOpening:
+			return GameStory{"opening_win", "Opening win", "You earned a decisive advantage in the opening and brought it home.", 90}
+		case opponentHadWin:
+			return GameStory{"comeback_win", "Comeback win", "Your opponent had a winning position, but you fought back.", 84}
+		case hasGameTag(tagged.Tags, string(TagDecidedBySwing)):
+			return GameStory{"tactical_win", "Tactical breakthrough", "One major middle-game swing decided the result.", 86}
+		default:
+			return GameStory{"converted_win", "Clean conversion", "You reached a winning position and converted it.", 88}
+		}
+	}
+	if result == "loss" {
+		switch {
+		case timedOut && userHadWin:
+			return GameStory{"time_loss", "Time loss", "You had a winning position, but the clock changed the result.", 52}
+		case userHadWin:
+			return GameStory{"failed_conversion", "Failed conversion", "You did the hard part and reached a winning position, but did not convert it.", 58}
+		case opponentWonOpening:
+			return GameStory{"opening_loss", "Opening loss", "The decisive disadvantage began in the opening.", 18}
+		case hasGameTag(tagged.Tags, string(TagDecidedBySwing)):
+			return GameStory{"tactical_loss", "Tactical blunder", "One major evaluation swing decided the game.", 24}
+		case hasGameTag(tagged.Tags, string(TagGradualOutplay)):
+			return GameStory{"slow_outplay", "Slow outplay", "The position slipped away gradually without one decisive blunder.", 20}
+		default:
+			return GameStory{"loss", "Decisive loss", "Your opponent built and converted the better position.", 28}
+		}
+	}
+	if opponentHadWin {
+		return GameStory{"saved_draw", "Saved game", "You held a draw after your opponent reached a winning position.", 62}
+	}
+	if userHadWin {
+		return GameStory{"missed_win", "Missed win", "You reached a winning position before the game ended in a draw.", 55}
+	}
+	return GameStory{"balanced_draw", "Balanced draw", "Neither player established a sustained winning advantage.", 50}
 }
 
 func TagGameFromEvals(result string, evals []MoveAnalysis, thresholds GameTagThresholds) GameTagResult {
@@ -268,6 +343,7 @@ func TagGameFromSeries(result string, whiteEvals []float64, moveNumbers []int, t
 	for k := range tags {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return GameTagResult{Tags: out, Metrics: m}
 }
 
