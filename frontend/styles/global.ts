@@ -2261,6 +2261,23 @@ block(`
 `);
 
 block(`
+.game-score-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+`);
+
+block(`
 .game-story-card h3 { margin: 3px 0 5px; }
 `);
 

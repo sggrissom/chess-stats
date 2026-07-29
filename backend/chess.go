@@ -306,22 +306,23 @@ type SyncGamesResponse struct {
 }
 
 type RecentGameItem struct {
-	Id             string  `json:"id"`
-	WhiteUsername  string  `json:"whiteUsername"`
-	WhiteRating    int     `json:"whiteRating"`
-	BlackUsername  string  `json:"blackUsername"`
-	BlackRating    int     `json:"blackRating"`
-	TimeClass      string  `json:"timeClass"`
-	TimeControl    string  `json:"timeControl"`
-	Result         string  `json:"result"`
-	UserColor      string  `json:"userColor"`
-	StartTime      int64   `json:"startTime"`
-	Opening        string  `json:"opening"`
-	OpeningECO     string  `json:"openingEco"`
-	AnalysisStatus int     `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
-	WhiteAccuracy  float64 `json:"whiteAccuracy"`
-	BlackAccuracy  float64 `json:"blackAccuracy"`
-	HasBrilliant   bool    `json:"hasBrilliant"`
+	Id             string     `json:"id"`
+	WhiteUsername  string     `json:"whiteUsername"`
+	WhiteRating    int        `json:"whiteRating"`
+	BlackUsername  string     `json:"blackUsername"`
+	BlackRating    int        `json:"blackRating"`
+	TimeClass      string     `json:"timeClass"`
+	TimeControl    string     `json:"timeControl"`
+	Result         string     `json:"result"`
+	UserColor      string     `json:"userColor"`
+	StartTime      int64      `json:"startTime"`
+	Opening        string     `json:"opening"`
+	OpeningECO     string     `json:"openingEco"`
+	AnalysisStatus int        `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
+	WhiteAccuracy  float64    `json:"whiteAccuracy"`
+	BlackAccuracy  float64    `json:"blackAccuracy"`
+	HasBrilliant   bool       `json:"hasBrilliant"`
+	Story          *GameStory `json:"story,omitempty"`
 }
 
 type GetRecentGamesRequest struct {
@@ -1253,16 +1254,12 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 	resp.Games = make([]RecentGameItem, end-start)
 	for i, m := range matches[start:end] {
 		status := AnalysisStatusNone
-		whiteAccuracy := 0.0
-		blackAccuracy := 0.0
 		var analysis GameAnalysis
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, m.game.Id) {
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, m.game.Id, &analysis)
 			status = analysis.Status
-			whiteAccuracy = analysis.WhiteAccuracy
-			blackAccuracy = analysis.BlackAccuracy
 		}
-		resp.Games[i] = gameToRecentItem(m.game, m.opening, status, whiteAccuracy, blackAccuracy, hasBrilliantMove(analysis.Moves))
+		resp.Games[i] = gameToRecentItem(m.game, m.opening, analysisOrNil(status, &analysis))
 	}
 	return
 }
@@ -1793,7 +1790,21 @@ func normalizeResult(r string) string {
 	}
 }
 
-func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int, whiteAccuracy float64, blackAccuracy float64, hasBrilliant bool) RecentGameItem {
+func gameToRecentItem(g Game, opening OpeningInfo, analysis *GameAnalysis) RecentGameItem {
+	analysisStatus := AnalysisStatusNone
+	whiteAccuracy, blackAccuracy := 0.0, 0.0
+	var story *GameStory
+	if analysis != nil {
+		analysisStatus = analysis.Status
+		whiteAccuracy = analysis.WhiteAccuracy
+		blackAccuracy = analysis.BlackAccuracy
+		if analysis.Status == AnalysisStatusDone {
+			tags := TagGameFromEvals(gameOutcomeForUserGame(g), analysis.Moves, DefaultGameTagThresholds())
+			computed := ClassifyGame(g.Result, g.UserColor, g.EndReason, analysis.Moves, tags)
+			computed = ModulateGameStoryScore(computed, g.UserColor, whiteAccuracy, blackAccuracy, analysis.Moves)
+			story = &computed
+		}
+	}
 	return RecentGameItem{
 		Id:             g.Id,
 		WhiteUsername:  g.WhiteUsername,
@@ -1810,8 +1821,16 @@ func gameToRecentItem(g Game, opening OpeningInfo, analysisStatus int, whiteAccu
 		AnalysisStatus: analysisStatus,
 		WhiteAccuracy:  whiteAccuracy,
 		BlackAccuracy:  blackAccuracy,
-		HasBrilliant:   hasBrilliant,
+		HasBrilliant:   analysis != nil && hasBrilliantMove(analysis.Moves),
+		Story:          story,
 	}
+}
+
+func analysisOrNil(status int, analysis *GameAnalysis) *GameAnalysis {
+	if status == AnalysisStatusNone {
+		return nil
+	}
+	return analysis
 }
 
 func hasBrilliantMove(moves []MoveAnalysis) bool {
@@ -1935,7 +1954,7 @@ func leaderboardGame(ctx *vbeam.Context, game Game, analysis GameAnalysis, moveC
 		accuracy = analysis.BlackAccuracy
 	}
 	return LeaderboardGame{
-		Game:           gameToRecentItem(game, opening, analysis.Status, analysis.WhiteAccuracy, analysis.BlackAccuracy, hasBrilliantMove(analysis.Moves)),
+		Game:           gameToRecentItem(game, opening, &analysis),
 		Accuracy:       accuracy,
 		BrilliantMoves: brilliantMoveCount(analysis.Moves),
 		MoveCount:      moveCount,
@@ -2108,16 +2127,12 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 		var opening OpeningInfo
 		vbolt.Read(ctx.Tx, GameOpeningBkt, g.Id, &opening)
 		status := AnalysisStatusNone
-		whiteAccuracy := 0.0
-		blackAccuracy := 0.0
 		var analysis GameAnalysis
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, g.Id) {
 			vbolt.Read(ctx.Tx, GameAnalysisBkt, g.Id, &analysis)
 			status = analysis.Status
-			whiteAccuracy = analysis.WhiteAccuracy
-			blackAccuracy = analysis.BlackAccuracy
 		}
-		resp.Games[i] = gameToRecentItem(g, opening, status, whiteAccuracy, blackAccuracy, hasBrilliantMove(analysis.Moves))
+		resp.Games[i] = gameToRecentItem(g, opening, analysisOrNil(status, &analysis))
 	}
 	return
 }
@@ -2239,7 +2254,7 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 		status = analysis.Status
 	}
 
-	resp.Game = gameToRecentItem(g, opening, status, analysis.WhiteAccuracy, analysis.BlackAccuracy, hasBrilliantMove(analysis.Moves))
+	resp.Game = gameToRecentItem(g, opening, analysisOrNil(status, &analysis))
 	resp.Pgn = pgn
 	if pgn != "" {
 		pgnReader := strings.NewReader(pgn)

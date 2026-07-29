@@ -121,6 +121,11 @@ export function analysisBadge(status: number, whiteAccuracy: number, blackAccura
   return null;
 }
 
+export function gameScoreBadge(game: RecentGameItem): preact.ComponentChild {
+  if (!game.story) return <span class="muted-cell">—</span>;
+  return <span class="game-score-badge" title={`${game.story.title}: ${game.story.description}`}>{game.story.score}</span>;
+}
+
 export function gameDetailRoute(gameId: string): string {
   return `/game/${gameId}?from=${encodeURIComponent(core.getRoute())}`;
 }
@@ -856,7 +861,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
           <>
             <table class="stats-table games-table opening-explorer-table">
               <thead>
-                <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Analysis</th><th>Brilliant</th></tr>
+                <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Score</th><th>Analysis</th></tr>
               </thead>
               <tbody>
                 {games.map(g => {
@@ -869,8 +874,8 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                       <td>{opponent}</td>
                       <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
                       <td>{opponentRating}</td>
+                      <td>{gameScoreBadge(g)}</td>
                       <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
-                      <td>{g.hasBrilliant ? <span class="brilliant-chip" title="Brilliant move found">✨</span> : <span class="muted-cell">—</span>}</td>
                     </tr>
                   );
                 })}
@@ -887,6 +892,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                       <span>{formatDate(g.startTime)}</span>
                       <span>
                         {analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}
+                        {gameScoreBadge(g)}
                         {g.hasBrilliant && <span class="brilliant-chip" title="Brilliant move found">✨</span>}
                       </span>
                     </div>
@@ -1097,7 +1103,7 @@ export function RecentGamesSection({ data, state }: {
         <table class="stats-table games-table">
           <thead>
             <tr>
-              <th>Date</th><th>Opponent</th><th>Color</th><th>Result</th><th>Opening</th><th>Rating</th><th>Analysis</th><th>Brilliant</th>
+              <th>Date</th><th>Opponent</th><th>Color</th><th>Result</th><th>Opening</th><th>Rating</th><th>Score</th><th>Analysis</th><th>Brilliant</th>
             </tr>
           </thead>
           <tbody>
@@ -1113,6 +1119,7 @@ export function RecentGamesSection({ data, state }: {
                   <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
                   <td class="opening-cell">{g.opening || "—"}</td>
                   <td>{opponentRating}</td>
+                  <td>{gameScoreBadge(g)}</td>
                   <td>{analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}</td>
                   <td>{g.hasBrilliant ? <span class="brilliant-chip" title="Brilliant move found">✨</span> : <span class="muted-cell">—</span>}</td>
                 </tr>
@@ -1132,6 +1139,7 @@ export function RecentGamesSection({ data, state }: {
                 <span>{formatDate(g.startTime)}</span>
                 <span>
                   {analysisBadge(g.analysisStatus, g.whiteAccuracy, g.blackAccuracy, g.userColor)}
+                  {gameScoreBadge(g)}
                   {g.hasBrilliant && <span class="brilliant-chip" title="Brilliant move found">✨</span>}
                 </span>
               </div>
