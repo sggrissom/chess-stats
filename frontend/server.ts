@@ -157,6 +157,14 @@ export interface GetGameDetailResponse {
     errorMessage: string
     analyzedAt: number
     tags: string[]
+    story?: GameStory
+}
+
+export interface GameStory {
+    category: string
+    title: string
+    description: string
+    score: number
 }
 
 export interface RequestGameAnalysisRequest {

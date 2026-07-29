@@ -125,3 +125,27 @@ func TestRecordTaggedPositionResultTracksTwoBinaryPositionRecords(t *testing.T) 
 		t.Fatalf("expected a binary opponent-never-had-winning-position split without result buckets: %+v", records)
 	}
 }
+
+func TestClassifyGameStories(t *testing.T) {
+	thr := DefaultGameTagThresholds()
+	failed := TagGameFromSeries("black", []float64{3.2, 3.4, 3.5, 3.7, 3.8, 3.9, 0, -4}, nil, thr)
+	story := ClassifyGame("loss", "white", "checkmated", nil, failed)
+	if story.Category != "failed_conversion" || story.Score != 58 {
+		t.Fatalf("expected credit for a failed conversion, got %+v", story)
+	}
+
+	timeWin := TagGameFromSeries("white", []float64{-4, -4.2, -4.1, -4.3, -4.4, -4.5}, nil, thr)
+	story = ClassifyGame("win", "white", "win (opponent timeout)", nil, timeWin)
+	if story.Category != "time_win" {
+		t.Fatalf("expected a time swindle, got %+v", story)
+	}
+}
+
+func TestClassifyEarlyCheckmate(t *testing.T) {
+	evals := []MoveAnalysis{{MoveNumber: 12, IsMate: true, MateIn: 2}}
+	tagged := TagGameFromEvals("white", evals, DefaultGameTagThresholds())
+	story := ClassifyGame("win", "white", "win", evals, tagged)
+	if story.Category != "early_checkmate" || story.Score != 98 {
+		t.Fatalf("expected early mate to be the highest-value outcome, got %+v", story)
+	}
+}

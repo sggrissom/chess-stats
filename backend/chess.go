@@ -417,6 +417,7 @@ type GetGameDetailResponse struct {
 	ErrorMessage   string             `json:"errorMessage,omitempty"`
 	AnalyzedAt     int64              `json:"analyzedAt"`
 	Tags           []string           `json:"tags,omitempty"`
+	Story          *GameStory         `json:"story,omitempty"`
 }
 
 type RequestGameAnalysisRequest struct {
@@ -521,10 +522,11 @@ type Game struct {
 	UserColor     string // "white" or "black"
 	StartTime     int64  // unix timestamp
 	Rules         string // "chess" or variant name
+	EndReason     string // raw chess.com decisive result (for example "timeout")
 }
 
 func PackGame(self *Game, buf *vpack.Buffer) {
-	vpack.Version(1, buf)
+	v := vpack.Version(2, buf)
 	vpack.String(&self.Id, buf)
 	vpack.Int(&self.UserId, buf)
 	vpack.String(&self.WhiteUsername, buf)
@@ -537,6 +539,9 @@ func PackGame(self *Game, buf *vpack.Buffer) {
 	vpack.String(&self.UserColor, buf)
 	vpack.VInt64(&self.StartTime, buf)
 	vpack.String(&self.Rules, buf)
+	if v >= 2 {
+		vpack.String(&self.EndReason, buf)
+	}
 }
 
 // Database types for openings
@@ -1762,9 +1767,17 @@ func buildGame(raw chesscomGame, gameId string, userId int, username string) Gam
 	if strings.EqualFold(raw.White.Username, username) {
 		g.UserColor = "white"
 		g.Result = normalizeResult(raw.White.Result)
+		g.EndReason = raw.White.Result
+		if g.Result == "win" {
+			g.EndReason = raw.Black.Result
+		}
 	} else {
 		g.UserColor = "black"
 		g.Result = normalizeResult(raw.Black.Result)
+		g.EndReason = raw.Black.Result
+		if g.Result == "win" {
+			g.EndReason = raw.White.Result
+		}
 	}
 	return g
 }
@@ -2265,6 +2278,8 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 		resp.Moves = convertMovesToSAN(pgn, analysis.Moves)
 		tagResult := TagGameFromEvals(gameOutcomeForUserGame(g), analysis.Moves, DefaultGameTagThresholds())
 		resp.Tags = tagResult.Tags
+		story := ClassifyGame(g.Result, g.UserColor, g.EndReason, analysis.Moves, tagResult)
+		resp.Story = &story
 	}
 	return
 }
