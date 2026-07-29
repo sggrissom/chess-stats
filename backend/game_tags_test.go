@@ -128,7 +128,7 @@ func TestRecordTaggedPositionResultTracksTwoBinaryPositionRecords(t *testing.T) 
 
 func TestClassifyGameStories(t *testing.T) {
 	thr := DefaultGameTagThresholds()
-	failed := TagGameFromSeries("black", []float64{3.2, 3.4, 3.5, 3.7, 0, -4}, nil, thr)
+	failed := TagGameFromSeries("black", []float64{3.2, 3.4, 3.5, 3.7, 3.8, 3.9, 0, -4}, nil, thr)
 	story := ClassifyGame("loss", "white", "checkmated", nil, failed)
 	if story.Category != "failed_conversion" || story.Score != 58 {
 		t.Fatalf("expected credit for a failed conversion, got %+v", story)
