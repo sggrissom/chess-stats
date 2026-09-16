@@ -43,6 +43,17 @@ export interface PerformanceInfoResponse {
     recentSlowRequests: PerformanceRequestSample[]
 }
 
+export interface GetRegisteredUsersResponse {
+    success: boolean
+    error: string
+    users: AdminUserSummary[]
+    totalUsers: number
+    newUsersLast30Days: number
+    activeLast7Days: number
+    linkedAccounts: number
+    totalGames: number
+}
+
 export interface SetChessUsernameRequest {
     chesscomUsername: string
 }
@@ -60,11 +71,6 @@ export interface ChessAccountResponse {
     success: boolean
     error: string
     chesscomUsername: string
-}
-
-export interface FollowedChessAccountResponse {
-    chesscomUsername: string
-    followedAt: number
 }
 
 export interface GetFollowedChessAccountsResponse {
@@ -120,15 +126,6 @@ export interface GetSessionsRequest {
 
 export interface GetSessionsResponse {
     sessions: SessionSummary[]
-}
-
-export interface SessionSummary {
-    date: string
-    timeClass: string
-    record: TimeClassRecord
-    gameCount: number
-    startedAt: number
-    endedAt: number
 }
 
 export interface GetGameLeaderboardsResponse {
@@ -271,6 +268,26 @@ export interface PerformanceRequestSample {
     at: number
 }
 
+export interface AdminUserSummary {
+    id: number
+    name: string
+    email: string
+    isAdmin: boolean
+    authProvider: string
+    creation: number
+    lastLogin: number
+    chesscomUsername: string
+    gameCount: number
+    lastGameAt: number
+    followedAccounts: number
+    activeSessions: number
+}
+
+export interface FollowedChessAccountResponse {
+    chesscomUsername: string
+    followedAt: number
+}
+
 export interface TimeClassRecord {
     wins: number
     losses: number
@@ -308,6 +325,15 @@ export interface RecentGameItem {
     blackAccuracy: number
     hasBrilliant: boolean
     story?: GameStory
+}
+
+export interface SessionSummary {
+    date: string
+    timeClass: string
+    record: TimeClassRecord
+    gameCount: number
+    startedAt: number
+    endedAt: number
 }
 
 export interface LeaderboardGame {
@@ -420,6 +446,10 @@ export async function GetPerformanceInfo(data: Empty): Promise<rpc.Response<Perf
     return await rpc.call<PerformanceInfoResponse>('GetPerformanceInfo', JSON.stringify(data));
 }
 
+export async function GetRegisteredUsers(data: Empty): Promise<rpc.Response<GetRegisteredUsersResponse>> {
+    return await rpc.call<GetRegisteredUsersResponse>('GetRegisteredUsers', JSON.stringify(data));
+}
+
 export async function SetChessUsername(data: SetChessUsernameRequest): Promise<rpc.Response<SetChessUsernameResponse>> {
     return await rpc.call<SetChessUsernameResponse>('SetChessUsername', JSON.stringify(data));
 }
@@ -519,3 +549,4 @@ export async function GetMissedWins(data: GameFilter): Promise<rpc.Response<GetM
 export async function GetSavedGames(data: GameFilter): Promise<rpc.Response<GetSavedGamesResponse>> {
     return await rpc.call<GetSavedGamesResponse>('GetSavedGames', JSON.stringify(data));
 }
+
