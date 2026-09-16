@@ -88,6 +88,8 @@ func GetRegisteredUsers(ctx *vbeam.Context, req Empty) (resp GetRegisteredUsersR
 // collectRegisteredUsers gathers every registered account plus the per-account
 // activity the admin page displays.
 func collectRegisteredUsers(tx *vbolt.Tx, now time.Time) (resp GetRegisteredUsersResponse) {
+	// Empty (not nil) so the JSON payload always carries an array.
+	resp.Users = make([]AdminUserSummary, 0)
 	newCutoff := now.AddDate(0, 0, -30)
 	activeCutoff := now.AddDate(0, 0, -7)
 	lastGame := lastGameTimeByUser(tx)

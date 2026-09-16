@@ -115,7 +115,11 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
   const perf = data.performance;
   const users = data.users;
   const usersState = useUsersState();
-  const visibleUsers = users?.success ? sortUsers(filterUsers(users.users, usersState.search), usersState) : [];
+  // Go emits nil slices as null, so normalise every list before rendering.
+  const allUsers = users?.users ?? [];
+  const visibleUsers = users?.success ? sortUsers(filterUsers(allUsers, usersState.search), usersState) : [];
+  const endpoints = perf?.endpoints ?? [];
+  const recentSlowRequests = perf?.recentSlowRequests ?? [];
 
   return (
     <DashboardLayout name={currentAuth.name} route={route}>
@@ -161,7 +165,7 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
                 {...vlens.attrsBindInput(vlens.ref(usersState, "search"))}
               />
               <span class="muted-text">
-                Showing {visibleUsers.length.toLocaleString()} of {users.users.length.toLocaleString()}
+                Showing {visibleUsers.length.toLocaleString()} of {allUsers.length.toLocaleString()}
               </span>
             </div>
 
@@ -257,7 +261,7 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
               <table class="performance-table">
                 <thead><tr><th>Endpoint</th><th>Requests</th><th>Slow</th><th>Avg</th><th>Max</th><th>Last</th></tr></thead>
                 <tbody>
-                  {perf.endpoints.map((ep) => (
+                  {endpoints.map((ep) => (
                     <tr key={ep.path}>
                       <td>{ep.path}</td><td>{ep.count}</td><td>{ep.slowCount}</td><td>{formatMs(ep.averageMs)}</td><td>{formatMs(ep.maxMs)}</td><td>{formatMs(ep.lastDurationMs)} · {formatDate(ep.lastSeen)}</td>
                     </tr>
@@ -267,8 +271,8 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
             </div>
 
             <h3>Recent slow requests</h3>
-            {perf.recentSlowRequests.length === 0 ? <p class="muted-text">No slow requests have been recorded since the server started.</p> : (
-              <div class="performance-table-wrap"><table class="performance-table"><thead><tr><th>When</th><th>Request</th><th>Status</th><th>Duration</th></tr></thead><tbody>{perf.recentSlowRequests.map((req) => <tr><td>{formatDate(req.at)}</td><td>{req.method} {req.path}</td><td>{req.status}</td><td>{formatMs(req.durationMs)}</td></tr>)}</tbody></table></div>
+            {recentSlowRequests.length === 0 ? <p class="muted-text">No slow requests have been recorded since the server started.</p> : (
+              <div class="performance-table-wrap"><table class="performance-table"><thead><tr><th>When</th><th>Request</th><th>Status</th><th>Duration</th></tr></thead><tbody>{recentSlowRequests.map((req) => <tr><td>{formatDate(req.at)}</td><td>{req.method} {req.path}</td><td>{req.status}</td><td>{formatMs(req.durationMs)}</td></tr>)}</tbody></table></div>
             )}
           </>
         )}

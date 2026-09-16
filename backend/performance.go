@@ -162,7 +162,9 @@ func GetPerformanceInfo(ctx *vbeam.Context, req Empty) (resp PerformanceInfoResp
 
 	resp.Success = true
 	resp.SlowRequestThresholdMs = slowRequestThreshold.Milliseconds()
-	resp.RecentSlowRequests = append([]PerformanceRequestSample(nil), perfStore.recentSlow...)
+	// Start from empty (not nil) slices so the JSON payload always carries arrays.
+	resp.RecentSlowRequests = append(make([]PerformanceRequestSample, 0, len(perfStore.recentSlow)), perfStore.recentSlow...)
+	resp.Endpoints = make([]PerformanceEndpointSummary, 0, len(perfStore.endpoints))
 
 	for _, ep := range perfStore.endpoints {
 		summary := PerformanceEndpointSummary{
