@@ -1699,16 +1699,26 @@ block(`
 `);
 
 block(`
-.opening-board-svg {
+.opening-board-img {
+  display: block;
+  width: 100%;
   max-width: 220px;
+  height: auto;
 }
 `);
 
 block(`
-.opening-board-svg svg {
-  display: block;
-  width: 100%;
-  height: auto;
+.opening-transposed {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+`);
+
+block(`
+.opening-game-line {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 `);
 

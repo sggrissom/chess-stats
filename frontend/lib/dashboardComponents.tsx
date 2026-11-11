@@ -218,12 +218,27 @@ function toggleOpening(state: OpeningsState, name: string, event: Event) {
   vlens.scheduleRedraw();
 }
 
-async function loadOpeningGames(state: OpeningsState, filter: GameFilter, opening: string, color: string, offset: number) {
-  const key = `${opening}|${color}`;
+// Explorer keys encode [opening, variation, subLine, color] so handlers can be
+// cached with cachePartial (variation/subLine "" = all).
+function openingExplorerKey(opening: string, variation: string, subLine: string, color: string): string {
+  return JSON.stringify([opening, variation, subLine, color]);
+}
+
+function parseOpeningExplorerKey(key: string): [string, string, string, string] {
+  return JSON.parse(key);
+}
+
+export function openingBoardUrl(family: string, variation: string, color: string): string {
+  const params = new URLSearchParams({ family, variation, perspective: color });
+  return `/opening-board.svg?${params.toString()}`;
+}
+
+async function loadOpeningGames(state: OpeningsState, filter: GameFilter, key: string, offset: number) {
+  const [opening, variation, subLine, color] = parseOpeningExplorerKey(key);
   const current = state.openingExplorer[key] ?? { games: [], total: 0, aggregate: null, offset: 0, loading: false };
   state.openingExplorer = { ...state.openingExplorer, [key]: { ...current, loading: true, offset } };
   vlens.scheduleRedraw();
-  const [resp] = await server.GetOpeningGames({ opening, variation: "", color, filter, limit: 20, offset });
+  const [resp] = await server.GetOpeningGames({ opening, variation, subLine, color, filter, limit: 20, offset });
   state.openingExplorer = {
     ...state.openingExplorer,
     [key]: { games: resp?.games ?? [], total: resp?.total ?? 0, aggregate: resp?.aggregate ?? null, offset, loading: false },
@@ -231,9 +246,8 @@ async function loadOpeningGames(state: OpeningsState, filter: GameFilter, openin
   vlens.scheduleRedraw();
 }
 
-async function onToggleOpeningGames(state: OpeningsState, filter: GameFilter, opening: string, color: string, event: Event) {
+async function onToggleOpeningGames(state: OpeningsState, filter: GameFilter, key: string, event: Event) {
   event.preventDefault();
-  const key = `${opening}|${color}`;
   if (state.openingExplorer[key]) {
     const next = { ...state.openingExplorer };
     delete next[key];
@@ -244,19 +258,16 @@ async function onToggleOpeningGames(state: OpeningsState, filter: GameFilter, op
     vlens.scheduleRedraw();
     return;
   }
-  await loadOpeningGames(state, filter, opening, color, 0);
-  const [trendResp] = await server.GetOpeningTrend({ opening, color, filter });
+  await loadOpeningGames(state, filter, key, 0);
+  const [opening, variation, subLine, color] = parseOpeningExplorerKey(key);
+  const [trendResp] = await server.GetOpeningTrend({ opening, variation, subLine, color, filter });
   state.openingTrends = { ...state.openingTrends, [key]: trendResp?.buckets ?? [] };
   vlens.scheduleRedraw();
 }
 
-// cachePartial 4-arg limit: use composite key
 async function onOpeningExplorerPage(state: OpeningsState, filter: GameFilter, key: string, offset: number, event: Event) {
   event.preventDefault();
-  const sep = key.lastIndexOf("|");
-  const opening = key.slice(0, sep);
-  const color = key.slice(sep + 1);
-  await loadOpeningGames(state, filter, opening, color, offset);
+  await loadOpeningGames(state, filter, key, offset);
 }
 
 // ─── Record ───────────────────────────────────────────────────────────────────
@@ -831,10 +842,19 @@ function OpeningTrendChart({ buckets }: { buckets: WinRateBucket[] }) {
   );
 }
 
-function OpeningGamesPanel({ opening, color, state, filter }: {
-  opening: string; color: string; state: OpeningsState; filter: GameFilter;
+// gameLineLabel names the line a game is grouped under relative to the
+// opening being explored, plus where it transposed to if it left.
+function gameLineLabel(g: RecentGameItem, opening: string): string {
+  const prefix = `${opening}: `;
+  const line = g.opening.startsWith(prefix) ? g.opening.slice(prefix.length) : g.opening === opening ? "" : g.opening;
+  return g.transposedTo ? `${line || opening} → ${g.transposedTo}` : line;
+}
+
+function OpeningGamesPanel({ explorerKey, state, filter }: {
+  explorerKey: string; state: OpeningsState; filter: GameFilter;
 }) {
-  const key = `${opening}|${color}`;
+  const key = explorerKey;
+  const [opening] = parseOpeningExplorerKey(key);
   const explorer = state.openingExplorer[key];
   if (!explorer) return null;
   const trendBuckets = state.openingTrends[key] ?? [];
@@ -861,7 +881,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
           <>
             <table class="stats-table games-table opening-explorer-table">
               <thead>
-                <tr><th>Date</th><th>Opponent</th><th>Result</th><th>Rating</th><th>Score</th><th>Analysis</th></tr>
+                <tr><th>Date</th><th>Opponent</th><th>Line</th><th>Result</th><th>Rating</th><th>Score</th><th>Analysis</th></tr>
               </thead>
               <tbody>
                 {games.map(g => {
@@ -872,6 +892,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                     <tr key={g.id} class="game-row" onClick={() => core.setRoute(gameDetailRoute(g.id))}>
                       <td>{formatDate(g.startTime)}</td>
                       <td>{opponent}</td>
+                      <td class="opening-game-line">{gameLineLabel(g, opening)}</td>
                       <td class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</td>
                       <td>{opponentRating}</td>
                       <td>{gameScoreBadge(g)}</td>
@@ -897,6 +918,7 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
                       </span>
                     </div>
                     <div class="game-card-opponent">vs {opponent} ({opponentRating})</div>
+                    {gameLineLabel(g, opening) && <div class="opening-game-line">{gameLineLabel(g, opening)}</div>}
                     <div class="game-card-meta">
                       <span>{g.userColor === "white" ? "♙ White" : "♟ Black"}</span>
                       <span class={resultClass}>{g.result.charAt(0).toUpperCase() + g.result.slice(1)}</span>
@@ -919,26 +941,107 @@ function OpeningGamesPanel({ opening, color, state, filter }: {
   );
 }
 
+const OTHER_LINES = "Other lines";
+
+function GamesToggle({ explorerKey, state, filter }: { explorerKey: string; state: OpeningsState; filter: GameFilter }) {
+  return (
+    <a href="#" class="opening-explorer-btn" onClick={vlens.cachePartial(onToggleOpeningGames, state, filter, explorerKey)}>
+      {state.openingExplorer[explorerKey] ? "▲ Games" : "▼ Games"}
+    </a>
+  );
+}
+
+function OpeningBoardRow({ family, variation, color }: { family: string; variation: string; color: string }) {
+  return (
+    <tr class="variation-row">
+      <td colspan={6} class="opening-board-cell">
+        <img class="opening-board-img" src={openingBoardUrl(family, variation, color)} alt={`${family} ${variation}`.trim()} loading="lazy" />
+      </td>
+    </tr>
+  );
+}
+
+function sortedByTotal<T>(entries: [string, T][], get: (v: T) => ColorRecord): [string, T][] {
+  return entries
+    .filter(([, v]) => totalColor(get(v)) > 0)
+    .sort((a, b) => totalColor(get(b[1])) - totalColor(get(a[1])));
+}
+
+function OpeningVariationRows({ family, entries, getVariationColor, state, filter, color }: {
+  family: string;
+  entries: [string, VariationRecord][];
+  getVariationColor: (vr: { asWhite: ColorRecord; asBlack: ColorRecord }) => ColorRecord;
+  state: OpeningsState;
+  filter: GameFilter;
+  color: string;
+}) {
+  return (
+    <>
+      {entries.map(([varName, vr]) => {
+        const expandKey = JSON.stringify([color, family, varName]);
+        const expanded = !!state.expandedOpenings[expandKey];
+        const subLines = sortedByTotal(Object.entries(vr.subLines ?? {}), getVariationColor);
+        const hasSubLines = subLines.length > 1 || (subLines.length === 1 && subLines[0][0] !== OTHER_LINES);
+        const hasDetails = hasSubLines || varName !== OTHER_LINES;
+        const explorerKey = openingExplorerKey(family, varName, "", color);
+        return (
+          <preact.Fragment key={expandKey}>
+            <tr class="variation-row">
+              <td style="padding-left: 1.5em">
+                {hasDetails ? (
+                  <a href="#" class="opening-toggle" onClick={vlens.cachePartial(toggleOpening, state, expandKey)}>
+                    {expanded ? "▾" : "▸"} {varName}
+                  </a>
+                ) : varName}
+                {" "}
+                <GamesToggle explorerKey={explorerKey} state={state} filter={filter} />
+              </td>
+              <ColorCells r={getVariationColor(vr)} />
+            </tr>
+            {expanded && varName !== OTHER_LINES && <OpeningBoardRow family={family} variation={varName} color={color} />}
+            {expanded && hasSubLines && subLines.map(([subName, sl]) => {
+              const subKey = openingExplorerKey(family, varName, subName, color);
+              return (
+                <preact.Fragment key={subKey}>
+                  <tr class="variation-row">
+                    <td style="padding-left: 3em">
+                      {subName}
+                      {" "}
+                      <GamesToggle explorerKey={subKey} state={state} filter={filter} />
+                    </td>
+                    <ColorCells r={getVariationColor(sl)} />
+                  </tr>
+                  <OpeningGamesPanel explorerKey={subKey} state={state} filter={filter} />
+                </preact.Fragment>
+              );
+            })}
+            <OpeningGamesPanel explorerKey={explorerKey} state={state} filter={filter} />
+          </preact.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
 export function OpeningColorSection({ title, entries, getColor, getVariationColor, otherKey, state, filter, color }: {
   title: string;
   entries: [string, OpeningRecord][];
   getColor: (rec: OpeningRecord) => ColorRecord;
-  getVariationColor: (vr: VariationRecord) => ColorRecord;
+  getVariationColor: (vr: { asWhite: ColorRecord; asBlack: ColorRecord }) => ColorRecord;
   otherKey: string;
   state: OpeningsState;
   filter: GameFilter;
   color: string;
 }) {
-  const withGames = entries.filter(([, rec]) => totalColor(getColor(rec)) > 0);
-  if (withGames.length === 0) return null;
+  const sorted = sortedByTotal(entries, getColor);
+  if (sorted.length === 0) return null;
 
-  const sorted = [...withGames].sort((a, b) => totalColor(getColor(b[1])) - totalColor(getColor(a[1])));
   const grandTotal = sorted.reduce((sum, [, rec]) => sum + totalColor(getColor(rec)), 0);
   const threshold = grandTotal * 0.05;
   const mainEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) >= threshold);
   const otherEntries = sorted.filter(([, rec]) => totalColor(getColor(rec)) < threshold);
 
-  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0, openingEvalSum: 0, openingEvalN: 0, boardSvg: "" };
+  const otherAgg: ColorRecord = { wins: 0, losses: 0, draws: 0, openingEvalSum: 0, openingEvalN: 0, transposed: 0 };
   for (const [, rec] of otherEntries) {
     const c = getColor(rec);
     otherAgg.wins += c.wins;
@@ -949,6 +1052,38 @@ export function OpeningColorSection({ title, entries, getColor, getVariationColo
   }
   const otherExpanded = !!state.expandedOpenings[otherKey];
 
+  const familyRows = (name: string, rec: OpeningRecord, indent: boolean) => {
+    const expandKey = JSON.stringify([color, name]);
+    const expanded = !!state.expandedOpenings[expandKey];
+    const explorerKey = openingExplorerKey(name, "", "", color);
+    const variations = sortedByTotal(Object.entries(rec.variations ?? {}), getVariationColor);
+    const transposed = getColor(rec).transposed ?? 0;
+    return (
+      <preact.Fragment key={expandKey}>
+        <tr class={indent ? "variation-row" : undefined}>
+          <td style={indent ? "padding-left: 1.5em" : undefined}>
+            <a href="#" class="opening-toggle" onClick={vlens.cachePartial(toggleOpening, state, expandKey)}>
+              {expanded ? "▾" : "▸"} {name}
+            </a>
+            {" "}
+            <GamesToggle explorerKey={explorerKey} state={state} filter={filter} />
+            {transposed > 0 && (
+              <span class="opening-transposed" title="Games that reached a different opening after move 3">
+                {transposed} transposed
+              </span>
+            )}
+          </td>
+          <ColorCells r={getColor(rec)} />
+        </tr>
+        {expanded && <OpeningBoardRow family={name} variation="" color={color} />}
+        {expanded && (
+          <OpeningVariationRows family={name} entries={variations} getVariationColor={getVariationColor} state={state} filter={filter} color={color} />
+        )}
+        <OpeningGamesPanel explorerKey={explorerKey} state={state} filter={filter} />
+      </preact.Fragment>
+    );
+  };
+
   return (
     <div class="stats-section">
       <h3>{title}</h3>
@@ -957,46 +1092,7 @@ export function OpeningColorSection({ title, entries, getColor, getVariationColo
           <tr><th></th><th>W</th><th>L</th><th>D</th><th>Win%</th><th>Opening</th></tr>
         </thead>
         <tbody>
-          {mainEntries.map(([name, rec]) => {
-            const expanded = !!state.expandedOpenings[name];
-            const variations = Object.entries(rec.variations ?? {})
-              .filter(([, vr]) => totalColor(getVariationColor(vr)) > 0)
-              .sort((a, b) => totalColor(getVariationColor(b[1])) - totalColor(getVariationColor(a[1])));
-            const boardSvg = getColor(rec).boardSvg;
-            const hasDetails = variations.length > 0 || !!boardSvg;
-            return (
-              <>
-                <tr key={name}>
-                  <td>
-                    {hasDetails ? (
-                      <a href="#" class="opening-toggle" onClick={vlens.cachePartial(toggleOpening, state, name)}>
-                        {expanded ? "▾" : "▸"} {name}
-                      </a>
-                    ) : name}
-                    {" "}
-                    <a href="#" class="opening-explorer-btn" onClick={vlens.cachePartial(onToggleOpeningGames, state, filter, name, color)}>
-                      {state.openingExplorer[`${name}|${color}`] ? "▲ Games" : "▼ Games"}
-                    </a>
-                  </td>
-                  <ColorCells r={getColor(rec)} />
-                </tr>
-                {expanded && boardSvg && (
-                  <tr key={`${name}/__board__`}>
-                    <td colspan={6} class="opening-board-cell">
-                      <div class="opening-board-svg" dangerouslySetInnerHTML={{ __html: boardSvg }} />
-                    </td>
-                  </tr>
-                )}
-                {expanded && variations.map(([varName, vr]) => (
-                  <tr key={`${name}/${varName}`} class="variation-row">
-                    <td style="padding-left: 1.5em">{varName}</td>
-                    <ColorCells r={getVariationColor(vr)} />
-                  </tr>
-                ))}
-                <OpeningGamesPanel opening={name} color={color} state={state} filter={filter} />
-              </>
-            );
-          })}
+          {mainEntries.map(([name, rec]) => familyRows(name, rec, false))}
           {otherEntries.length > 0 && (
             <>
               <tr key={otherKey}>
@@ -1007,21 +1103,7 @@ export function OpeningColorSection({ title, entries, getColor, getVariationColo
                 </td>
                 <ColorCells r={otherAgg} />
               </tr>
-              {otherExpanded && otherEntries.map(([name, rec]) => (
-                <preact.Fragment key={`${otherKey}/${name}`}>
-                  <tr class="variation-row">
-                    <td style="padding-left: 1.5em">
-                      {name}
-                      {" "}
-                      <a href="#" class="opening-explorer-btn" onClick={vlens.cachePartial(onToggleOpeningGames, state, filter, name, color)}>
-                        {state.openingExplorer[`${name}|${color}`] ? "▲ Games" : "▼ Games"}
-                      </a>
-                    </td>
-                    <ColorCells r={getColor(rec)} />
-                  </tr>
-                  <OpeningGamesPanel opening={name} color={color} state={state} filter={filter} />
-                </preact.Fragment>
-              ))}
+              {otherExpanded && otherEntries.map(([name, rec]) => familyRows(name, rec, true))}
             </>
           )}
         </tbody>

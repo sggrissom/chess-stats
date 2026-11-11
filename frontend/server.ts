@@ -210,6 +210,7 @@ export interface GetFrequentOpponentsResponse {
 export interface GetOpeningGamesRequest {
     opening: string
     variation: string
+    subLine: string
     color: string
     filter: GameFilter
     limit: number
@@ -224,6 +225,8 @@ export interface GetOpeningGamesResponse {
 
 export interface GetOpeningTrendRequest {
     opening: string
+    variation: string
+    subLine: string
     color: string
     filter: GameFilter
 }
@@ -320,6 +323,7 @@ export interface RecentGameItem {
     startTime: number
     opening: string
     openingEco: string
+    transposedTo: string
     analysisStatus: number
     whiteAccuracy: number
     blackAccuracy: number
@@ -422,10 +426,16 @@ export interface ColorRecord {
     draws: number
     openingEvalSum: number
     openingEvalN: number
-    boardSvg: string
+    transposed: number
 }
 
 export interface VariationRecord {
+    asWhite: ColorRecord
+    asBlack: ColorRecord
+    subLines: Record<string, SubLineRecord>
+}
+
+export interface SubLineRecord {
     asWhite: ColorRecord
     asBlack: ColorRecord
 }
