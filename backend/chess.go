@@ -45,6 +45,7 @@ func RegisterChessMethods(app *vbeam.Application) {
 	vbeam.RegisterProc(app, GetMissedWins)
 	vbeam.RegisterProc(app, GetSavedGames)
 	app.HandleFunc("GET /game/{id}/position/{ply}", gamePositionSvgHandler)
+	app.HandleFunc("GET /opening-board.svg", openingBoardHandler)
 }
 
 // gamePositionSvgHandler serves a raw SVG of the board at a given ply.
@@ -251,17 +252,23 @@ func gameMatchesFilter(game *Game, f GameFilter) bool {
 }
 
 type ColorRecord struct {
-	Wins           int    `json:"wins"`
-	Losses         int    `json:"losses"`
-	Draws          int    `json:"draws"`
-	OpeningEvalSum int    `json:"openingEvalSum"` // centipawns, user perspective, summed across analyzed games
-	OpeningEvalN   int    `json:"openingEvalN"`   // count of games with opening analysis
-	BoardSvg       string `json:"boardSvg,omitempty"`
+	Wins           int `json:"wins"`
+	Losses         int `json:"losses"`
+	Draws          int `json:"draws"`
+	OpeningEvalSum int `json:"openingEvalSum"` // centipawns, user perspective, summed across analyzed games
+	OpeningEvalN   int `json:"openingEvalN"`   // count of games with opening analysis
+	Transposed     int `json:"transposed"`     // games that left this opening after it was chosen
+}
+
+type SubLineRecord struct {
+	AsWhite ColorRecord `json:"asWhite"`
+	AsBlack ColorRecord `json:"asBlack"`
 }
 
 type VariationRecord struct {
-	AsWhite ColorRecord `json:"asWhite"`
-	AsBlack ColorRecord `json:"asBlack"`
+	AsWhite  ColorRecord              `json:"asWhite"`
+	AsBlack  ColorRecord              `json:"asBlack"`
+	SubLines map[string]SubLineRecord `json:"subLines"`
 }
 
 type OpeningRecord struct {
@@ -277,8 +284,9 @@ type GetOpeningStatsResponse struct {
 
 type GetOpeningGamesRequest struct {
 	Opening   string     `json:"opening"`
-	Variation string     `json:"variation,omitempty"`
-	Color     string     `json:"color,omitempty"` // "white"|"black"|"" = both
+	Variation string     `json:"variation,omitempty"` // "" = all variations
+	SubLine   string     `json:"subLine,omitempty"`   // "" = all sub-lines
+	Color     string     `json:"color,omitempty"`     // "white"|"black"|"" = both
 	Filter    GameFilter `json:"filter"`
 	Limit     int        `json:"limit"`
 	Offset    int        `json:"offset"`
@@ -318,7 +326,8 @@ type RecentGameItem struct {
 	StartTime      int64      `json:"startTime"`
 	Opening        string     `json:"opening"`
 	OpeningECO     string     `json:"openingEco"`
-	AnalysisStatus int        `json:"analysisStatus"` // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
+	TransposedTo   string     `json:"transposedTo,omitempty"` // book name the game transposed into
+	AnalysisStatus int        `json:"analysisStatus"`         // -1=none, 0=pending, 1=analyzing, 2=done, 3=failed
 	WhiteAccuracy  float64    `json:"whiteAccuracy"`
 	BlackAccuracy  float64    `json:"blackAccuracy"`
 	HasBrilliant   bool       `json:"hasBrilliant"`
@@ -473,9 +482,11 @@ type GetAccuracyTrendResponse struct {
 }
 
 type GetOpeningTrendRequest struct {
-	Opening string     `json:"opening"`
-	Color   string     `json:"color,omitempty"` // "white"|"black"|"" = both
-	Filter  GameFilter `json:"filter"`
+	Opening   string     `json:"opening"`
+	Variation string     `json:"variation,omitempty"` // "" = all variations
+	SubLine   string     `json:"subLine,omitempty"`   // "" = all sub-lines
+	Color     string     `json:"color,omitempty"`     // "white"|"black"|"" = both
+	Filter    GameFilter `json:"filter"`
 }
 
 type GetOpeningTrendResponse struct {
@@ -548,9 +559,10 @@ func PackGame(self *Game, buf *vpack.Buffer) {
 // Database types for openings
 
 type OpeningInfo struct {
-	ECO       string
-	Opening   string
-	Variation string
+	ECO          string
+	Opening      string
+	Variation    string
+	TransposedTo string // not persisted; set by readGameOpening
 }
 
 func PackOpeningInfo(self *OpeningInfo, buf *vpack.Buffer) {
@@ -587,9 +599,6 @@ var GamesByUserIdx = vbolt.Index[string, int](&cfg.Info, "games_by_user", vpack.
 // Synced-month sentinel: key="userId/YYYY/MM", value=true means month has been fully fetched.
 // Current month is never marked synced so new games are always picked up.
 var SyncedMonthsBkt = vbolt.Bucket(&cfg.Info, "synced_months", vpack.StringZ, vpack.Bool)
-
-// "userId/opening/color" => board SVG string, cached during SyncGames to avoid re-parsing PGNs on every stats request
-var OpeningBoardSvgBkt = vbolt.Bucket(&cfg.Info, "chess_opening_board_svg", vpack.StringZ, vpack.String)
 
 // Procedures
 
@@ -824,8 +833,9 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 		vbolt.SetTargetSingleTerm(ctx.Tx, GamesByUserIdx, pg.game.Id, user.Id)
 		if info := extractOpeningFromPGN(pg.pgn); info.ECO != "" {
 			vbolt.Write(ctx.Tx, GameOpeningBkt, pg.game.Id, &info)
-			cacheOpeningSvg(ctx.Tx, user.Id, info.Opening, pg.pgn, pg.game.UserColor)
 		}
+		cls := classifyGameOpening(pg.pgn)
+		vbolt.Write(ctx.Tx, GameOpeningClassBkt, pg.game.Id, &cls)
 		added++
 	}
 
@@ -1035,44 +1045,6 @@ func openingEvalForGame(analysis *GameAnalysis, userColor string) (int, bool) {
 	return eval, true
 }
 
-func cacheOpeningSvg(tx *vbolt.Tx, userId int, opening, pgn, color string) {
-	key := fmt.Sprintf("%d/%s/%s", userId, opening, color)
-	if vbolt.HasKey(tx, OpeningBoardSvgBkt, key) {
-		return
-	}
-	perspective := chess.White
-	if color == "black" {
-		perspective = chess.Black
-	}
-	svg := openingBoardSvg(pgn, perspective)
-	if svg != "" {
-		vbolt.Write(tx, OpeningBoardSvgBkt, key, &svg)
-	}
-}
-
-// openingBoardSvg parses pgn and returns an SVG of the board at the end of the
-// opening phase (move OpeningEndMove or last available), from the given perspective.
-func openingBoardSvg(pgn string, perspective chess.Color) string {
-	pgnFn, pgnErr := chess.PGN(strings.NewReader(pgn))
-	if pgnErr != nil {
-		return ""
-	}
-	positions := chess.NewGame(pgnFn).Positions()
-	if len(positions) == 0 {
-		return ""
-	}
-	idx := min(OpeningEndMove*2, len(positions)-1)
-	var svgBuf bytes.Buffer
-	if err := chessimage.SVG(&svgBuf, positions[idx].Board(), chessimage.Perspective(perspective)); err != nil {
-		return ""
-	}
-	// The library emits width/height but no viewBox; without viewBox, CSS scaling
-	// clips rather than scales. Add viewBox so the diagram scales correctly.
-	return strings.Replace(svgBuf.String(),
-		`width="360" height="360"`,
-		`width="360" height="360" viewBox="0 0 360 360"`, 1)
-}
-
 func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsResponse, err error) {
 	user, authErr := GetAuthUser(ctx)
 	if authErr != nil || user.Id == 0 {
@@ -1080,30 +1052,25 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 	}
 	resp.ByOpening = make(map[string]OpeningRecord)
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
-		var info OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
-		if info.Opening == "" {
-			return true
-		}
-		if alias, ok := openingAliases[info.Opening]; ok {
-			info.Opening = alias[0]
-			if info.Variation == "" {
-				info.Variation = alias[1]
-			}
-		}
 		var game Game
 		vbolt.Read(ctx.Tx, GameBkt, gameId, &game)
 		if !gameMatchesFilter(&game, req) {
 			return true
 		}
-		rec := resp.ByOpening[info.Opening]
-		if rec.Variations == nil {
-			rec.Variations = make(map[string]VariationRecord)
+		cls := readGameOpeningClass(ctx.Tx, gameId)
+		if cls.Family == "" {
+			return true
 		}
-		if rec.ECO == "" && info.ECO != "" {
-			rec.ECO = info.ECO
+		var analysis GameAnalysis
+		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
+			vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
 		}
-		bumpColor := func(cr *ColorRecord) {
+		openingEval, hasEval := openingEvalForGame(&analysis, game.UserColor)
+		bump := func(white, black *ColorRecord) {
+			cr := black
+			if game.UserColor == "white" {
+				cr = white
+			}
 			switch game.Result {
 			case "win":
 				cr.Wins++
@@ -1112,51 +1079,54 @@ func GetOpeningStats(ctx *vbeam.Context, req GameFilter) (resp GetOpeningStatsRe
 			default:
 				cr.Draws++
 			}
-		}
-		var analysis GameAnalysis
-		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
-			vbolt.Read(ctx.Tx, GameAnalysisBkt, gameId, &analysis)
-		}
-		openingEval, hasEval := openingEvalForGame(&analysis, game.UserColor)
-		bumpEval := func(cr *ColorRecord) {
 			if hasEval {
 				cr.OpeningEvalSum += openingEval
 				cr.OpeningEvalN++
 			}
-		}
-		if game.UserColor == "white" {
-			bumpColor(&rec.AsWhite)
-			bumpEval(&rec.AsWhite)
-		} else {
-			bumpColor(&rec.AsBlack)
-			bumpEval(&rec.AsBlack)
-		}
-		if info.Variation != "" {
-			vr := rec.Variations[info.Variation]
-			if game.UserColor == "white" {
-				bumpColor(&vr.AsWhite)
-				bumpEval(&vr.AsWhite)
-			} else {
-				bumpColor(&vr.AsBlack)
-				bumpEval(&vr.AsBlack)
+			if cls.TransposedTo != "" {
+				cr.Transposed++
 			}
-			rec.Variations[info.Variation] = vr
 		}
-		resp.ByOpening[info.Opening] = rec
+
+		rec := resp.ByOpening[cls.Family]
+		if rec.Variations == nil {
+			rec.Variations = make(map[string]VariationRecord)
+		}
+		if rec.ECO == "" {
+			rec.ECO = cls.ECO
+		}
+		bump(&rec.AsWhite, &rec.AsBlack)
+
+		vr := rec.Variations[variationLabel(cls)]
+		if vr.SubLines == nil {
+			vr.SubLines = make(map[string]SubLineRecord)
+		}
+		bump(&vr.AsWhite, &vr.AsBlack)
+
+		sl := vr.SubLines[subLineLabel(cls)]
+		bump(&sl.AsWhite, &sl.AsBlack)
+
+		vr.SubLines[subLineLabel(cls)] = sl
+		rec.Variations[variationLabel(cls)] = vr
+		resp.ByOpening[cls.Family] = rec
 		return true
 	})
-	for openingName, rec := range resp.ByOpening {
-		whiteKey := fmt.Sprintf("%d/%s/white", user.Id, openingName)
-		blackKey := fmt.Sprintf("%d/%s/black", user.Id, openingName)
-		if vbolt.HasKey(ctx.Tx, OpeningBoardSvgBkt, whiteKey) {
-			vbolt.Read(ctx.Tx, OpeningBoardSvgBkt, whiteKey, &rec.AsWhite.BoardSvg)
-		}
-		if vbolt.HasKey(ctx.Tx, OpeningBoardSvgBkt, blackKey) {
-			vbolt.Read(ctx.Tx, OpeningBoardSvgBkt, blackKey, &rec.AsBlack.BoardSvg)
-		}
-		resp.ByOpening[openingName] = rec
-	}
 	return
+}
+
+// openingMatches reports whether a game's classification falls under the
+// requested family, and variation/sub-line when given.
+func openingMatches(cls GameOpeningClass, family, variation, subLine string) bool {
+	if cls.Family == "" || cls.Family != family {
+		return false
+	}
+	if variation != "" && variationLabel(cls) != variation {
+		return false
+	}
+	if subLine != "" && subLineLabel(cls) != subLine {
+		return false
+	}
+	return true
 }
 
 func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOpeningGamesResponse, err error) {
@@ -1179,21 +1149,8 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 	var matches []gameWithOpening
 
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
-		var info OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
-		if info.Opening == "" {
-			return true
-		}
-		if alias, ok := openingAliases[info.Opening]; ok {
-			info.Opening = alias[0]
-			if info.Variation == "" {
-				info.Variation = alias[1]
-			}
-		}
-		if info.Opening != req.Opening {
-			return true
-		}
-		if req.Variation != "" && info.Variation != req.Variation {
+		cls := readGameOpeningClass(ctx.Tx, gameId)
+		if !openingMatches(cls, req.Opening, req.Variation, req.SubLine) {
 			return true
 		}
 		var game Game
@@ -1204,7 +1161,7 @@ func GetOpeningGames(ctx *vbeam.Context, req GetOpeningGamesRequest) (resp GetOp
 		if req.Color != "" && game.UserColor != req.Color {
 			return true
 		}
-		matches = append(matches, gameWithOpening{game: game, opening: info})
+		matches = append(matches, gameWithOpening{game: game, opening: readGameOpening(ctx.Tx, gameId)})
 		return true
 	})
 
@@ -1275,18 +1232,7 @@ func GetOpeningTrend(ctx *vbeam.Context, req GetOpeningTrendRequest) (resp GetOp
 
 	var games []Game
 	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
-		var info OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
-		if info.Opening == "" {
-			return true
-		}
-		if alias, ok := openingAliases[info.Opening]; ok {
-			info.Opening = alias[0]
-			if info.Variation == "" {
-				info.Variation = alias[1]
-			}
-		}
-		if info.Opening != req.Opening {
+		if !openingMatches(readGameOpeningClass(ctx.Tx, gameId), req.Opening, req.Variation, req.SubLine) {
 			return true
 		}
 		var game Game
@@ -1521,8 +1467,7 @@ func GetMissedWins(ctx *vbeam.Context, req GameFilter) (resp GetMissedWinsRespon
 			opponentRating = game.WhiteRating
 		}
 
-		var info OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+		info := readGameOpening(ctx.Tx, gameId)
 
 		resp.Games = append(resp.Games, MissedWinGame{
 			GameId:         gameId,
@@ -1595,8 +1540,7 @@ func GetSavedGames(ctx *vbeam.Context, req GameFilter) (resp GetSavedGamesRespon
 			opponentRating = game.WhiteRating
 		}
 
-		var info OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, gameId, &info)
+		info := readGameOpening(ctx.Tx, gameId)
 
 		resp.Games = append(resp.Games, MissedWinGame{
 			GameId:         gameId,
@@ -1700,16 +1644,6 @@ var openingKeywords = []string{
 	"Gambit-Declined", "Gambit-Accepted",
 	"Game", "Defense", "Defence", "Opening", "Attack", "Gambit",
 	"Dutch", "System",
-}
-
-// openingAliases maps stored opening names to a canonical parent opening + variation name.
-// Needed for Chess.com ECO URLs that place a modifier before the base opening name
-// (e.g. "Alapin-Sicilian-Defense" instead of "Sicilian-Defense-Alapin-Variation").
-var openingAliases = map[string][2]string{
-	"Alapin Sicilian Defense":       {"Sicilian Defense", "Alapin"},
-	"Closed Sicilian Defense":       {"Sicilian Defense", "Closed"},
-	"Vienna Game Max Lange Defense": {"Vienna Game", "Max Lange Defense"},
-	"Vienna Game Anderssen Defense": {"Vienna Game", "Anderssen Defense"},
 }
 
 // parseECOUrl splits a chess.com ECOUrl into top-level opening name and variation name.
@@ -1818,6 +1752,7 @@ func gameToRecentItem(g Game, opening OpeningInfo, analysis *GameAnalysis) Recen
 		StartTime:      g.StartTime,
 		Opening:        opening.Opening,
 		OpeningECO:     opening.ECO,
+		TransposedTo:   opening.TransposedTo,
 		AnalysisStatus: analysisStatus,
 		WhiteAccuracy:  whiteAccuracy,
 		BlackAccuracy:  blackAccuracy,
@@ -1947,8 +1882,7 @@ func ratingDifference(game Game) int {
 }
 
 func leaderboardGame(ctx *vbeam.Context, game Game, analysis GameAnalysis, moveCount int) LeaderboardGame {
-	var opening OpeningInfo
-	vbolt.Read(ctx.Tx, GameOpeningBkt, game.Id, &opening)
+	opening := readGameOpening(ctx.Tx, game.Id)
 	accuracy := analysis.WhiteAccuracy
 	if game.UserColor == "black" {
 		accuracy = analysis.BlackAccuracy
@@ -2124,8 +2058,7 @@ func GetRecentGames(ctx *vbeam.Context, req GetRecentGamesRequest) (resp GetRece
 
 	resp.Games = make([]RecentGameItem, len(page))
 	for i, g := range page {
-		var opening OpeningInfo
-		vbolt.Read(ctx.Tx, GameOpeningBkt, g.Id, &opening)
+		opening := readGameOpening(ctx.Tx, g.Id)
 		status := AnalysisStatusNone
 		var analysis GameAnalysis
 		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, g.Id) {
@@ -2241,8 +2174,7 @@ func GetGameDetail(ctx *vbeam.Context, req GetGameDetailRequest) (resp GetGameDe
 		return
 	}
 
-	var opening OpeningInfo
-	vbolt.Read(ctx.Tx, GameOpeningBkt, req.GameId, &opening)
+	opening := readGameOpening(ctx.Tx, req.GameId)
 
 	var pgn string
 	vbolt.Read(ctx.Tx, GamePgnBkt, req.GameId, &pgn)
