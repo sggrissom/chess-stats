@@ -192,6 +192,8 @@ type GetFollowedChessAccountsResponse struct {
 type GetChessProfileResponse struct {
 	ChesscomUsername string `json:"chesscomUsername"`
 	GameCount        int    `json:"gameCount"`
+	LastSyncedAt     int64  `json:"lastSyncedAt"`
+	Syncing          bool   `json:"syncing"`
 }
 
 type TimeClassRecord struct {
@@ -737,6 +739,10 @@ func GetChessProfile(ctx *vbeam.Context, req Empty) (resp GetChessProfileRespons
 	vbolt.Read(ctx.Tx, ChessProfileBkt, user.Id, &profile)
 	resp.ChesscomUsername = profile.ChesscomUsername
 	vbolt.ReadTermCount(ctx.Tx, GamesByUserIdx, &user.Id, &resp.GameCount)
+	vbolt.Read(ctx.Tx, LastSyncBkt, user.Id, &resp.LastSyncedAt)
+	if profile.ChesscomUsername != "" {
+		resp.Syncing = TriggerSyncIfStale(user.Id)
+	}
 	return
 }
 
@@ -747,107 +753,11 @@ func SyncGames(ctx *vbeam.Context, req Empty) (resp SyncGamesResponse, err error
 		return
 	}
 
-	// Read profile from existing read tx
-	var profile ChessProfile
-	vbolt.Read(ctx.Tx, ChessProfileBkt, user.Id, &profile)
-	if profile.ChesscomUsername == "" {
-		resp.Error = "No chess.com username configured"
+	added, total, syncErr := syncAndAnalyze(autoSyncDB, user.Id)
+	if syncErr != nil {
+		resp.Error = syncErr.Error()
 		return
 	}
-
-	now := time.Now()
-	currentMonthKey := fmt.Sprintf("%d/%02d", now.Year(), int(now.Month()))
-
-	// Fetch archive list (network call, no tx held after this)
-	archives, fetchErr := fetchArchiveList(profile.ChesscomUsername)
-	if fetchErr != nil {
-		resp.Error = "Failed to fetch archive list: " + fetchErr.Error()
-		return
-	}
-
-	type pendingGame struct {
-		game        Game
-		pgn         string
-		sentinelKey string
-	}
-
-	var pending []pendingGame
-	var monthsToMark []string
-
-	for _, archiveURL := range archives {
-		monthKey := extractMonthKey(archiveURL)
-		if monthKey == "" {
-			continue
-		}
-		sentinelKey := fmt.Sprintf("%d/%s", user.Id, monthKey)
-
-		// Skip already-synced months (except the current month)
-		if monthKey != currentMonthKey {
-			var synced bool
-			vbolt.Read(ctx.Tx, SyncedMonthsBkt, sentinelKey, &synced)
-			if synced {
-				continue
-			}
-		}
-
-		rawGames, monthErr := fetchMonthlyGames(archiveURL)
-		if monthErr != nil {
-			// Skip this month on error; don't fail the whole sync
-			continue
-		}
-
-		for _, raw := range rawGames {
-			gameId := extractGameID(raw.URL)
-			if gameId == "" {
-				continue
-			}
-			g := buildGame(raw, gameId, user.Id, profile.ChesscomUsername)
-			pending = append(pending, pendingGame{game: g, pgn: raw.PGN, sentinelKey: sentinelKey})
-		}
-
-		if monthKey != currentMonthKey {
-			monthsToMark = append(monthsToMark, sentinelKey)
-		}
-	}
-
-	// Switch to write tx and persist everything
-	vbeam.UseWriteTx(ctx)
-
-	var added int
-	for _, pg := range pending {
-		if vbolt.HasKey(ctx.Tx, GameBkt, pg.game.Id) {
-			// Backfill StartTime for games stored before the EndTime fallback was added
-			if pg.game.StartTime != 0 {
-				var existing Game
-				vbolt.Read(ctx.Tx, GameBkt, pg.game.Id, &existing)
-				if existing.StartTime == 0 {
-					existing.StartTime = pg.game.StartTime
-					vbolt.Write(ctx.Tx, GameBkt, pg.game.Id, &existing)
-				}
-			}
-			continue
-		}
-		vbolt.Write(ctx.Tx, GameBkt, pg.game.Id, &pg.game)
-		pgn := pg.pgn
-		vbolt.Write(ctx.Tx, GamePgnBkt, pg.game.Id, &pgn)
-		vbolt.SetTargetSingleTerm(ctx.Tx, GamesByUserIdx, pg.game.Id, user.Id)
-		if info := extractOpeningFromPGN(pg.pgn); info.ECO != "" {
-			vbolt.Write(ctx.Tx, GameOpeningBkt, pg.game.Id, &info)
-		}
-		cls := classifyGameOpening(pg.pgn)
-		vbolt.Write(ctx.Tx, GameOpeningClassBkt, pg.game.Id, &cls)
-		added++
-	}
-
-	synced := true
-	for _, mk := range monthsToMark {
-		vbolt.Write(ctx.Tx, SyncedMonthsBkt, mk, &synced)
-	}
-
-	var total int
-	vbolt.ReadTermCount(ctx.Tx, GamesByUserIdx, &user.Id, &total)
-
-	vbolt.TxCommit(ctx.Tx)
 
 	resp.Success = true
 	resp.NewGamesAdded = added
@@ -2287,51 +2197,12 @@ func RequestAllGameAnalysis(ctx *vbeam.Context, req RequestAllGameAnalysisReques
 		return
 	}
 
-	if globalAnalysisWorker == nil {
-		resp.Error = "Analysis worker not available"
+	queued, queueErr := queueUnanalyzedGames(autoSyncDB, user.Id)
+	if queueErr != nil {
+		resp.Error = queueErr.Error()
 		return
 	}
-
-	const maxBulkAnalysis = 1000
-	var gameIds []string
-	vbolt.IterateTerm(ctx.Tx, GamesByUserIdx, user.Id, func(gameId string, _ uint16) bool {
-		if len(gameIds) >= maxBulkAnalysis {
-			return false
-		}
-		if vbolt.HasKey(ctx.Tx, GameAnalysisBkt, gameId) {
-			return true
-		}
-		var g Game
-		vbolt.Read(ctx.Tx, GameBkt, gameId, &g)
-		if g.Rules != "" && g.Rules != "chess" {
-			return true
-		}
-		gameIds = append(gameIds, gameId)
-		return true
-	})
-
-	if len(gameIds) == 0 {
-		return
-	}
-
-	vbeam.UseWriteTx(ctx)
-	for _, gameId := range gameIds {
-		pending := GameAnalysis{GameId: gameId, Status: AnalysisStatusPending}
-		vbolt.Write(ctx.Tx, GameAnalysisBkt, gameId, &pending)
-		vbolt.SetTargetSingleTerm(ctx.Tx, AnalysisByStatusIdx, gameId, AnalysisStatusPending)
-	}
-	vbolt.TxCommit(ctx.Tx)
-
-	go func(ids []string) {
-		for _, id := range ids {
-			if globalAnalysisWorker == nil {
-				return
-			}
-			globalAnalysisWorker.jobQueue <- AnalysisJob{GameId: id}
-		}
-	}(gameIds)
-
-	resp.Queued = len(gameIds)
+	resp.Queued = queued
 	return
 }
 

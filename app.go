@@ -40,6 +40,7 @@ func MakeApplication() *vbeam.Application {
 	backend.RegisterAdminMethods(app)
 	backend.RegisterChessMethods(app)
 	backend.InitializeAnalysisWorker(db)
+	backend.StartAutoSync(db)
 	backend.BackfillOpeningClasses(db)
 
 	return app

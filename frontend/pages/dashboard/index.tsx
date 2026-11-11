@@ -15,6 +15,8 @@ import { StreaksSection, TIME_CLASS_ORDER, formatDate, gameDetailRoute } from ".
 type Data = {
   chesscomUsername: string;
   gameCount: number;
+  lastSyncedAt: number;
+  syncing: boolean;
   followedAccounts: server.FollowedChessAccountResponse[];
   sessions: server.SessionSummary[];
   stats: GetGameStatsResponse | null;
@@ -32,7 +34,6 @@ type OverviewState = {
   lookedUpUsername: string;
   saving: boolean;
   syncing: boolean;
-  analyzingAll: boolean;
   lookingUp: boolean;
   following: boolean;
   statusMessage: string;
@@ -45,7 +46,6 @@ const useOverviewState = vlens.declareHook((): OverviewState => ({
   lookedUpUsername: "",
   saving: false,
   syncing: false,
-  analyzingAll: false,
   lookingUp: false,
   following: false,
   statusMessage: "",
@@ -142,8 +142,10 @@ async function onSyncGames(state: OverviewState, event: Event) {
   state.syncing = false;
   if (resp?.success) {
     _data.gameCount = resp.totalGames;
-    state.statusMessage = `Sync complete. ${resp.newGamesAdded} new games added. Total: ${resp.totalGames}.`;
+    _data.lastSyncedAt = Math.floor(Date.now() / 1000);
+    state.statusMessage = `Sync complete. ${resp.newGamesAdded} new games added; new games are queued for analysis.`;
     state.isError = false;
+    if (resp.newGamesAdded > 0) reloadDashboard();
   } else {
     state.statusMessage = resp?.error || "Sync failed";
     state.isError = true;
@@ -151,24 +153,41 @@ async function onSyncGames(state: OverviewState, event: Event) {
   vlens.scheduleRedraw();
 }
 
-async function onAnalyzeAllGames(state: OverviewState, event: Event) {
-  event.preventDefault();
-  state.analyzingAll = true;
-  state.statusMessage = "";
-  state.isError = false;
-  vlens.scheduleRedraw();
-  const [resp] = await server.RequestAllGameAnalysis({});
-  state.analyzingAll = false;
-  if (resp && !resp.error) {
-    state.statusMessage = resp.queued === 0
-      ? "All games are already analyzed."
-      : `Queued ${resp.queued} game${resp.queued === 1 ? "" : "s"} for analysis.`;
-    state.isError = false;
-  } else {
-    state.statusMessage = resp?.error || "Failed to queue games for analysis";
-    state.isError = true;
-  }
-  vlens.scheduleRedraw();
+const BACKGROUND_SYNC_POLL_MS = 3000;
+let backgroundSyncPoll: number | undefined;
+
+function reloadDashboard() {
+  if (core.getRoute() === "/dashboard") core.replaceRoute("/dashboard");
+}
+
+// The server starts a sync when the dashboard loads with stale data. Poll until
+// it finishes, then reload so the new games show up.
+function watchBackgroundSync(initialGameCount: number) {
+  if (backgroundSyncPoll !== undefined) return;
+  backgroundSyncPoll = window.setInterval(async () => {
+    const [profile] = await server.GetChessProfile({});
+    if (profile?.syncing) return;
+    window.clearInterval(backgroundSyncPoll);
+    backgroundSyncPoll = undefined;
+    if (!profile) return;
+    _data.lastSyncedAt = profile.lastSyncedAt;
+    _data.syncing = false;
+    if (profile.gameCount !== initialGameCount) {
+      reloadDashboard();
+    } else {
+      vlens.scheduleRedraw();
+    }
+  }, BACKGROUND_SYNC_POLL_MS);
+}
+
+function formatLastSynced(ts: number): string {
+  if (!ts) return "Never synced";
+  const minutes = Math.floor((Date.now() / 1000 - ts) / 60);
+  if (minutes < 1) return "Synced just now";
+  if (minutes < 60) return `Synced ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Synced ${hours}h ago`;
+  return `Synced ${formatDate(ts)}`;
 }
 
 function onChangeUsername(state: OverviewState, event: Event) {
@@ -398,13 +417,17 @@ function OverviewContent({ data }: { data: Data }) {
 
 export async function fetch(route: string, prefix: string) {
   if (!(await ensureAuthInFetch())) {
-    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, followedAccounts: [], sessions: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null });
+    return rpc.ok<Data>({ chesscomUsername: "", gameCount: 0, lastSyncedAt: 0, syncing: false, followedAccounts: [], sessions: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null });
   }
   const [profile] = await server.GetChessProfile({});
   const username = profile?.chesscomUsername ?? "";
   const gameCount = profile?.gameCount ?? 0;
   const [followed] = await server.GetFollowedChessAccounts({});
-  const data: Data = { chesscomUsername: username, gameCount, followedAccounts: followed?.accounts ?? [], sessions: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null };
+  const data: Data = {
+    chesscomUsername: username, gameCount, lastSyncedAt: profile?.lastSyncedAt ?? 0, syncing: profile?.syncing ?? false,
+    followedAccounts: followed?.accounts ?? [], sessions: [], stats: null, openingStats: null, ratingHistory: null, streaks: null, recentGames: null,
+  };
+  if (data.syncing) watchBackgroundSync(gameCount);
 
   if (username) {
     const thirtyDayFilter: GameFilter = {
@@ -460,11 +483,9 @@ export function view(route: string, prefix: string, data: Data): preact.Componen
               <a href="#" class="auth-link" onClick={vlens.cachePartial(onChangeUsername, state)}>Change</a>
             </p>
             <div class="chess-actions">
-              <button class="btn btn-primary" disabled={state.syncing} onClick={vlens.cachePartial(onSyncGames, state)}>
-                {state.syncing ? "Syncing..." : "Sync Games"}
-              </button>
-              <button class="btn btn-secondary" disabled={state.analyzingAll} onClick={vlens.cachePartial(onAnalyzeAllGames, state)}>
-                {state.analyzingAll ? "Queueing..." : "Analyze All Games"}
+              <span class="muted-text">{data.syncing ? "Syncing new games…" : formatLastSynced(data.lastSyncedAt)}</span>
+              <button class="btn btn-secondary" disabled={state.syncing || data.syncing} onClick={vlens.cachePartial(onSyncGames, state)}>
+                {state.syncing ? "Syncing..." : "Sync Now"}
               </button>
             </div>
           </div>

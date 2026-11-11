@@ -2817,6 +2817,7 @@ block(`
 block(`
 .chess-actions {
   display: flex;
+  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;

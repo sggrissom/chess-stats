@@ -80,6 +80,8 @@ export interface GetFollowedChessAccountsResponse {
 export interface GetChessProfileResponse {
     chesscomUsername: string
     gameCount: number
+    lastSyncedAt: number
+    syncing: boolean
 }
 
 export interface SyncGamesResponse {

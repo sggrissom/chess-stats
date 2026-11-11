@@ -75,6 +75,15 @@ func (w *analysisWorker) processJobs() {
 }
 
 func (w *analysisWorker) processAnalysisJob(job AnalysisJob) {
+	// A game can be queued twice (e.g. re-queued on startup and requested again)
+	var existing GameAnalysis
+	vbolt.WithReadTx(w.db, func(tx *vbolt.Tx) {
+		vbolt.Read(tx, GameAnalysisBkt, job.GameId, &existing)
+	})
+	if existing.Status == AnalysisStatusDone {
+		return
+	}
+
 	log.Printf("[ANALYSIS] Starting analysis of game %s", job.GameId)
 
 	// Mark as analyzing
